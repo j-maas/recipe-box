@@ -1,4 +1,4 @@
-module Recipe exposing (Quantity, Recipe, RecipePart(..), ParsingError, from, ingredients, map, parse, quantity, quantityAmount, quantityToString)
+module Recipe exposing (Ingredient, ParsingError, Quantity, Recipe, RecipePart(..), from, getListName, getQuantity, getText, ingredients, map, parse, quantity, quantityAmount, ingredient, ingredientWithName, quantityToString)
 
 import Parser exposing ((|.), (|=), Parser)
 
@@ -16,10 +16,45 @@ type RecipePart
     | IngredientPart Ingredient
 
 
-type alias Ingredient =
-    { name : String
-    , quantity : Maybe Quantity
-    }
+type Ingredient
+    = Ingredient
+        { text : String
+        , quantity : Maybe Quantity
+        , listName : Maybe String
+        }
+
+
+ingredient : String -> Maybe Quantity -> Ingredient
+ingredient text quant =
+    Ingredient
+        { text = text
+        , quantity = quant
+        , listName = Nothing
+        }
+
+
+ingredientWithName : String -> Maybe Quantity -> String -> Ingredient
+ingredientWithName text quant listName =
+    Ingredient
+        { text = text
+        , quantity = quant
+        , listName = Just listName
+        }
+
+
+getText : Ingredient -> String
+getText (Ingredient ingred) =
+    ingred.text
+
+
+getQuantity : Ingredient -> Maybe Quantity
+getQuantity (Ingredient ingred) =
+    ingred.quantity
+
+
+getListName : Ingredient -> String
+getListName (Ingredient ingred) =
+    Maybe.withDefault ingred.text ingred.listName
 
 
 type Quantity
@@ -65,8 +100,8 @@ ingredients (Recipe recipe) =
     List.filterMap
         (\part ->
             case part of
-                IngredientPart ingredient ->
-                    Just ingredient
+                IngredientPart ingred ->
+                    Just ingred
 
                 _ ->
                     Nothing
@@ -91,7 +126,7 @@ parseRecipe =
 parseRecursion : RecipeParts -> Parser (Parser.Step RecipeParts Recipe)
 parseRecursion state =
     Parser.oneOf
-        [ Parser.succeed (\ingredient -> Parser.Loop (ingredient :: state))
+        [ Parser.succeed (\ingred -> Parser.Loop (ingred :: state))
             |= parseIngredient
         , Parser.succeed (\plain -> Parser.Loop (plain :: state))
             |= parsePlain
@@ -115,11 +150,18 @@ parsePlain =
 parseIngredient : Parser RecipePart
 parseIngredient =
     Parser.succeed
-        (\name maybeQuantity ->
+        (\text maybeMeta ->
+            let
+                ( maybeQuantity, maybeListName ) =
+                    Maybe.withDefault ( Nothing, Nothing ) maybeMeta
+            in
             IngredientPart
-                { name = name
-                , quantity = maybeQuantity
-                }
+                (Ingredient
+                    { text = text
+                    , quantity = maybeQuantity
+                    , listName = maybeListName
+                    }
+                )
         )
         |. Parser.symbol "<"
         |= (Parser.getChompedString
@@ -131,21 +173,37 @@ parseIngredient =
                 |> Parser.map String.trimRight
            )
         |= parseOptional
-            (Parser.succeed Quantity
+            (let
+                parseInside =
+                    Parser.getChompedString (Parser.chompWhile (\c -> c /= ')'))
+             in
+             Parser.succeed
+                (\quant listName ->
+                    ( quant, listName )
+                )
                 |. chompWhitespace
                 |. Parser.symbol "("
-                |= Parser.int
                 |= parseOptional
-                    (Parser.succeed
-                        (\chomped ->
-                            String.trim chomped
-                        )
-                        |. Parser.chompIf isWhitespace
-                        |= Parser.getChompedString (Parser.chompWhile (\c -> c /= ')'))
+                    (parseQuantity parseInside)
+                |= parseOptional
+                    (Parser.succeed String.trim
+                        |. Parser.symbol ":"
+                        |= parseInside
                     )
                 |. Parser.symbol ")"
             )
         |. Parser.symbol ">"
+
+
+parseQuantity : Parser String -> Parser Quantity
+parseQuantity parseInside =
+    Parser.succeed Quantity
+        |= Parser.int
+        |= parseOptional
+            (Parser.succeed String.trim
+                |. Parser.chompIf isWhitespace
+                |= parseInside
+            )
 
 
 parseOptional : Parser a -> Parser (Maybe a)

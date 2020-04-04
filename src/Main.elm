@@ -21,7 +21,7 @@ type alias Model =
 
 init : Model
 init =
-    { recipe = Recipe.parse "Fry the <egg (1)> in <butter (15 g)>."
+    { recipe = Recipe.parse "Chop the <onion (1: large onion)>. Fry the <egg (1)> in <butter (15 g)>."
     }
 
 
@@ -61,12 +61,12 @@ viewRecipe recipe =
                     (\ingredient ->
                         let
                             quantityText =
-                                ingredient.quantity
+                                Recipe.getQuantity ingredient
                                     |> Maybe.map (\quantity -> Recipe.quantityToString quantity ++ " ")
                                     |> Maybe.withDefault ""
 
                             text =
-                                quantityText ++ ingredient.name
+                                quantityText ++ Recipe.getListName ingredient
                         in
                         Html.li [] [ Html.text text ]
                     )
@@ -81,7 +81,7 @@ viewRecipe recipe =
                             Html.text text
 
                         Recipe.IngredientPart ingredient ->
-                            Html.text ingredient.name
+                            Html.text (Recipe.getText ingredient)
                 )
                 recipe
     in

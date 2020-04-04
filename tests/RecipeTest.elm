@@ -18,36 +18,47 @@ suite =
                                 [ PlainPart "Order some pizza."
                                 ]
                         )
-        , test "unquantified ingredient" <|
+        , test "unquantified ingred" <|
             \_ ->
                 Recipe.parse "Cook an <egg>."
                     |> Expect.equal
                         (Ok <|
                             Recipe.from
                                 [ PlainPart "Cook an "
-                                , IngredientPart { name = "egg", quantity = Nothing }
+                                , IngredientPart <| ingredient "egg" Nothing
                                 , PlainPart "."
                                 ]
                         )
-        , test "ingredient with amount" <|
+        , test "ingred with amount" <|
             \_ ->
                 Recipe.parse "Cook an <egg (1)>."
                     |> Expect.equal
                         (Ok <|
                             Recipe.from
                                 [ PlainPart "Cook an "
-                                , IngredientPart { name = "egg", quantity = Just (quantityAmount 1) }
+                                , IngredientPart <| ingredient "egg" (Just (quantityAmount 1))
                                 , PlainPart "."
                                 ]
                         )
-        , test "ingredient with unit" <|
+        , test "ingred with unit" <|
             \_ ->
                 Recipe.parse "Boil <water (200 ml)>."
                     |> Expect.equal
                         (Ok <|
                             Recipe.from
                                 [ PlainPart "Boil "
-                                , IngredientPart { name = "water", quantity = Just (quantity 200 "ml") }
+                                , IngredientPart <| ingredient "water" (Just (quantity 200 "ml"))
+                                , PlainPart "."
+                                ]
+                        )
+        , test "ingred with amount and different list name" <|
+            \_ ->
+                Recipe.parse "Cut the <onion (1: large onion)>."
+                    |> Expect.equal
+                        (Ok <|
+                            Recipe.from
+                                [ PlainPart "Cut the "
+                                , IngredientPart <| ingredientWithName "onion" (Just (quantityAmount 1)) "large onion"
                                 , PlainPart "."
                                 ]
                         )
