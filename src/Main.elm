@@ -21,7 +21,7 @@ type alias Model =
 
 init : Model
 init =
-    { recipe = [ Recipe.Plain "Cook an <egg>." ]
+    { recipe = Recipe.parse "Cook an <egg>." |> Result.withDefault (Recipe.from [])
     }
 
 
@@ -46,13 +46,34 @@ view model =
 
 viewRecipe : Recipe -> Html msg
 viewRecipe recipe =
-    Html.article []
-        (Html.h2 [] [ Html.text "Description" ]
-            :: List.map
+    let
+        ingredients =
+            Recipe.ingredients recipe
+
+        ingredientsView =
+            Html.ul []
+                (List.map
+                    (\ingredient ->
+                        Html.li [] [ Html.text ingredient ]
+                    )
+                    ingredients
+                )
+
+        descriptionView =
+            Recipe.map
                 (\recipePart ->
                     case recipePart of
-                        Recipe.Plain text ->
+                        Recipe.PlainPart text ->
                             Html.text text
+
+                        Recipe.IngredientPart ingredient ->
+                            Html.text ingredient
                 )
                 recipe
+    in
+    Html.article []
+        (Html.h2 [] [ Html.text "Ingredients" ]
+            :: ingredientsView
+            :: Html.h2 [] [ Html.text "Description" ]
+            :: descriptionView
         )
