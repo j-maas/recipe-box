@@ -21,7 +21,7 @@ type alias Model =
 
 init : Model
 init =
-    { recipe = Recipe.parse "Chop the <onion (1: large onion)>. Fry the <egg (1)> in <butter (15 g)>."
+    { recipe = Recipe.parse "Chop the <onion (1: large onion)>. Fry the onion in <butter (15 g)>. Boil the <egg (1)> in the <water (0.5 l)>."
     }
 
 

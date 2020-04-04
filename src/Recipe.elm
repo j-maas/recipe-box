@@ -1,4 +1,4 @@
-module Recipe exposing (Ingredient, ParsingError, Quantity, Recipe, RecipePart(..), from, getListName, getQuantity, getText, ingredients, map, parse, quantity, quantityAmount, ingredient, ingredientWithName, quantityToString)
+module Recipe exposing (Ingredient, ParsingError, Quantity, Recipe, RecipePart(..), from, getListName, getQuantity, getText, ingredient, ingredientWithName, ingredients, map, parse, quantity, quantityAmount, quantityToString)
 
 import Parser exposing ((|.), (|=), Parser)
 
@@ -58,15 +58,15 @@ getListName (Ingredient ingred) =
 
 
 type Quantity
-    = Quantity Int (Maybe String)
+    = Quantity Float (Maybe String)
 
 
-quantityAmount : Int -> Quantity
+quantityAmount : Float -> Quantity
 quantityAmount number =
     Quantity number Nothing
 
 
-quantity : Int -> String -> Quantity
+quantity : Float -> String -> Quantity
 quantity number unit =
     Quantity number (Just unit)
 
@@ -77,7 +77,7 @@ quantityToString (Quantity number maybeUnit) =
         unit =
             Maybe.map (\u -> " " ++ u) maybeUnit |> Maybe.withDefault ""
     in
-    String.fromInt number ++ unit
+    String.fromFloat number ++ unit
 
 
 from : RecipeParts -> Recipe
@@ -198,7 +198,7 @@ parseIngredient =
 parseQuantity : Parser String -> Parser Quantity
 parseQuantity parseInside =
     Parser.succeed Quantity
-        |= Parser.int
+        |= Parser.float
         |= parseOptional
             (Parser.succeed String.trim
                 |. Parser.chompIf isWhitespace

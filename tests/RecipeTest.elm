@@ -18,7 +18,7 @@ suite =
                                 [ PlainPart "Order some pizza."
                                 ]
                         )
-        , test "unquantified ingred" <|
+        , test "unquantified ingredient" <|
             \_ ->
                 Recipe.parse "Cook an <egg>."
                     |> Expect.equal
@@ -29,7 +29,7 @@ suite =
                                 , PlainPart "."
                                 ]
                         )
-        , test "ingred with amount" <|
+        , test "ingredient with amount" <|
             \_ ->
                 Recipe.parse "Cook an <egg (1)>."
                     |> Expect.equal
@@ -40,7 +40,7 @@ suite =
                                 , PlainPart "."
                                 ]
                         )
-        , test "ingred with unit" <|
+        , test "ingredient with unit" <|
             \_ ->
                 Recipe.parse "Boil <water (200 ml)>."
                     |> Expect.equal
@@ -51,7 +51,18 @@ suite =
                                 , PlainPart "."
                                 ]
                         )
-        , test "ingred with amount and different list name" <|
+        , test "ingredient with decimal quantity" <|
+            \_ ->
+                Recipe.parse "Boil <water (0.2 l)>."
+                    |> Expect.equal
+                        (Ok <|
+                            Recipe.from
+                                [ PlainPart "Boil "
+                                , IngredientPart <| ingredient "water" (Just (quantity 0.2 "l"))
+                                , PlainPart "."
+                                ]
+                        )
+        , test "ingredient with amount and different list name" <|
             \_ ->
                 Recipe.parse "Cut the <onion (1: large onion)>."
                     |> Expect.equal
