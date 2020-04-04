@@ -29,6 +29,17 @@ suite =
                                 , PlainPart "."
                                 ]
                         )
+        , test "ingredient with descriptive quantity" <|
+            \_ ->
+                Recipe.parse "Add <salt (a pinch)>."
+                    |> Expect.equal
+                        (Ok <|
+                            Recipe.from
+                                [ PlainPart "Add "
+                                , IngredientPart <| ingredient "salt" (Just (Description "a pinch"))
+                                , PlainPart "."
+                                ]
+                        )
         , test "ingredient with amount" <|
             \_ ->
                 Recipe.parse "Cook an <egg (1)>."
@@ -36,7 +47,7 @@ suite =
                         (Ok <|
                             Recipe.from
                                 [ PlainPart "Cook an "
-                                , IngredientPart <| ingredient "egg" (Just (quantityAmount 1))
+                                , IngredientPart <| ingredient "egg" (Just (Amount 1))
                                 , PlainPart "."
                                 ]
                         )
@@ -47,7 +58,7 @@ suite =
                         (Ok <|
                             Recipe.from
                                 [ PlainPart "Boil "
-                                , IngredientPart <| ingredient "water" (Just (quantity 200 "ml"))
+                                , IngredientPart <| ingredient "water" (Just (Measure 200 "ml"))
                                 , PlainPart "."
                                 ]
                         )
@@ -58,7 +69,7 @@ suite =
                         (Ok <|
                             Recipe.from
                                 [ PlainPart "Boil "
-                                , IngredientPart <| ingredient "water" (Just (quantity 0.2 "l"))
+                                , IngredientPart <| ingredient "water" (Just (Measure 0.2 "l"))
                                 , PlainPart "."
                                 ]
                         )
@@ -69,7 +80,7 @@ suite =
                         (Ok <|
                             Recipe.from
                                 [ PlainPart "Cut the "
-                                , IngredientPart <| ingredientWithName "onion" (Just (quantityAmount 1)) "large onion"
+                                , IngredientPart <| ingredientWithName "onion" (Just (Amount 1)) "large onion"
                                 , PlainPart "."
                                 ]
                         )

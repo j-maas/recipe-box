@@ -1,4 +1,7 @@
-module Recipe exposing (Ingredient, ParsingError, Quantity, Recipe, RecipePart(..), from, getListName, getQuantity, getText, ingredient, ingredientWithName, ingredients, map, parse, quantity, quantityAmount, quantityToString)
+-- module Recipe exposing (Ingredient, ParsingError, Quantity(..), Recipe, RecipePart(..), from, getListName, getQuantity, getText, ingredient, ingredientWithName, ingredients, map, parse)
+
+
+module Recipe exposing (..)
 
 import Parser exposing ((|.), (|=), Parser)
 
@@ -58,26 +61,9 @@ getListName (Ingredient ingred) =
 
 
 type Quantity
-    = Quantity Float (Maybe String)
-
-
-quantityAmount : Float -> Quantity
-quantityAmount number =
-    Quantity number Nothing
-
-
-quantity : Float -> String -> Quantity
-quantity number unit =
-    Quantity number (Just unit)
-
-
-quantityToString : Quantity -> String
-quantityToString (Quantity number maybeUnit) =
-    let
-        unit =
-            Maybe.map (\u -> " " ++ u) maybeUnit |> Maybe.withDefault ""
-    in
-    String.fromFloat number ++ unit
+    = Amount Float
+    | Measure Float String
+    | Description String
 
 
 from : RecipeParts -> Recipe
@@ -157,52 +143,87 @@ parseIngredient =
             in
             IngredientPart
                 (Ingredient
-                    { text = text
+                    { text = String.trim text
                     , quantity = maybeQuantity
                     , listName = maybeListName
                     }
                 )
         )
         |. Parser.symbol "<"
-        |= (Parser.getChompedString
-                (Parser.chompWhile
-                    (\c ->
-                        not (c == '(' || c == '>')
-                    )
-                )
-                |> Parser.map String.trimRight
-           )
+        |= parseInsideText [ '(', '>' ]
         |= parseOptional
-            (let
-                parseInside =
-                    Parser.getChompedString (Parser.chompWhile (\c -> c /= ')'))
-             in
-             Parser.succeed
+            (Parser.succeed
                 (\quant listName ->
                     ( quant, listName )
                 )
-                |. chompWhitespace
                 |. Parser.symbol "("
                 |= parseOptional
-                    (parseQuantity parseInside)
+                    (parseQuantity [ ')', ':' ])
                 |= parseOptional
                     (Parser.succeed String.trim
                         |. Parser.symbol ":"
-                        |= parseInside
+                        |= parseInsideText [ ')' ]
                     )
                 |. Parser.symbol ")"
             )
         |. Parser.symbol ">"
 
 
-parseQuantity : Parser String -> Parser Quantity
-parseQuantity parseInside =
-    Parser.succeed Quantity
+parseQuantity : List Char -> Parser Quantity
+parseQuantity endChars =
+    Parser.oneOf
+        [ Parser.succeed
+            (\number maybeUnit ->
+                case maybeUnit of
+                    Just unit ->
+                        Measure number unit
+
+                    Nothing ->
+                        Amount number
+            )
+            |= Parser.float
+            |= parseOptional
+                (Parser.succeed identity
+                    |. Parser.symbol " "
+                    |= parseInsideText endChars
+                )
+        , parseDescription endChars
+        ]
+
+
+parseDescription : List Char -> Parser Quantity
+parseDescription endChars =
+    Parser.succeed
+        (\inside ->
+            String.trim inside |> Description
+        )
+        |= parseInsideText endChars
+
+
+parseAmount : Parser Quantity
+parseAmount =
+    Parser.succeed Amount
         |= Parser.float
-        |= parseOptional
-            (Parser.succeed String.trim
-                |. Parser.chompIf isWhitespace
-                |= parseInside
+
+
+parseMeasure : List Char -> Parser Quantity
+parseMeasure endChars =
+    Parser.succeed Measure
+        |= Parser.float
+        |. Parser.symbol " "
+        |= parseInsideText endChars
+
+
+parseInsideText : List Char -> Parser String
+parseInsideText endChars =
+    Parser.getChompedString (Parser.chompWhile (\c -> not (List.member c endChars)))
+        |> Parser.andThen
+            (\text ->
+                if String.isEmpty text then
+                    Parser.problem "Inside text cannot be empty"
+
+                else
+                    Parser.succeed text
             )
 
 
