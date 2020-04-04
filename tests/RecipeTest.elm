@@ -3,6 +3,7 @@ module RecipeTest exposing (..)
 import Dict
 import Expect exposing (Expectation)
 import Fuzz exposing (Fuzzer, int, list, string)
+import IngredientMap
 import Recipe exposing (..)
 import Test exposing (..)
 
@@ -97,19 +98,55 @@ suite =
                         , PlainPart " and the "
                         , IngredientPart <|
                             ingredient "bell pepper" Nothing
-                        , PlainPart ". Put the whole "
-                        , IngredientPart <|
-                            ingredientWithName "onion" (Just (Amount 1)) "onions"
-                        , PlainPart " into the oven."
+                        , PlainPart "."
                         ]
-                        |> ingredients
-                        |> Expect.equal
-                            (ingredientMapFromDict
-                                (Dict.fromList
-                                    [ ( "onions", [ Amount 2, Amount 1 ] )
-                                    , ( "bell pepper", [] )
-                                    ]
-                                )
+                        |> IngredientMap.fromRecipe
+                        |> Expect.equalDicts
+                            (Dict.fromList
+                                [ ( "onions"
+                                  , { descriptions = []
+                                    , amount = Just 2
+                                    , measures = Dict.empty
+                                    }
+                                  )
+                                , ( "bell pepper"
+                                  , { descriptions = []
+                                    , amount = Nothing
+                                    , measures = Dict.empty
+                                    }
+                                  )
+                                ]
+                            )
+            , test "adds up ingredients" <|
+                \_ ->
+                    Recipe.from
+                        [ PlainPart "Boil an "
+                        , IngredientPart <|
+                            ingredientWithName "egg" (Just (Amount 1)) "eggs"
+                        , PlainPart " in the "
+                        , IngredientPart <|
+                            ingredient "water" Nothing
+                        , PlainPart ". Fry the other "
+                        , IngredientPart <|
+                            ingredientWithName "egg" (Just (Amount 1)) "eggs"
+                        , PlainPart " in a pan."
+                        ]
+                        |> IngredientMap.fromRecipe
+                        |> Expect.equalDicts
+                            (Dict.fromList
+                                [ ( "eggs"
+                                  , { descriptions = []
+                                    , amount = Just 2
+                                    , measures = Dict.empty
+                                    }
+                                  )
+                                , ( "water"
+                                  , { descriptions = []
+                                    , amount = Nothing
+                                    , measures = Dict.empty
+                                    }
+                                  )
+                                ]
                             )
             ]
         ]

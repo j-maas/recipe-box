@@ -1,9 +1,11 @@
 module Main exposing (main)
 
 import Browser
+import Dict
 import Html.Styled as Html exposing (Html)
 import Html.Styled.Attributes as Attributes
 import Html.Styled.Events as Events
+import IngredientMap
 import Recipe exposing (Recipe)
 
 
@@ -57,21 +59,40 @@ viewRecipe recipe =
     let
         ingredientsView =
             Html.ul []
-                (Recipe.mapIngredients
-                    (\name quantities ->
-                        let
-                            quantitiesText =
-                                (List.map quantityText quantities |> String.join " + ") ++ " "
+                (IngredientMap.fromRecipe recipe
+                    |> Dict.toList
+                    |> List.map
+                        (\( name, quantities ) ->
+                            let
+                                descriptions =
+                                    quantities.descriptions
 
-                            quantityText quantity =
-                                stringFromQuantity quantity
+                                amount =
+                                    Maybe.map (\a -> [ String.fromFloat a ]) quantities.amount
+                                        |> Maybe.withDefault []
 
-                            text =
-                                quantitiesText ++ name
-                        in
-                        Html.li [] [ Html.text text ]
-                    )
-                    recipe
+                                measures =
+                                    Dict.toList quantities.measures
+                                        |> List.map
+                                            (\( unit, unitAmount ) ->
+                                                String.fromFloat unitAmount ++ " " ++ unit
+                                            )
+
+                                quantitiesTexts =
+                                    measures ++ descriptions ++ amount
+
+                                quantitiesText =
+                                    if List.isEmpty quantitiesTexts then
+                                        ""
+
+                                    else
+                                        String.join " + " quantitiesTexts ++ " "
+
+                                text =
+                                    quantitiesText ++ name
+                            in
+                            Html.li [] [ Html.text text ]
+                        )
                 )
 
         descriptionView =

@@ -1,6 +1,5 @@
-module Recipe exposing (Ingredient, ParsingError, Quantity(..), Recipe, RecipePart(..), from, getListName, getQuantity, getText, ingredient, ingredientMapFrom, ingredientMapFromDict, ingredientWithName, map, mapIngredients, parse)
+module Recipe exposing (Ingredient, ParsingError, Quantity(..), Recipe, RecipePart(..), from, getListName, getQuantity, getText, ingredient, ingredientWithName, ingredients, map, parse)
 
-import Dict exposing (Dict)
 import Parser exposing ((|.), (|=), Parser)
 
 
@@ -79,65 +78,23 @@ type alias ParsingError =
     String
 
 
-type IngredientMap
-    = IngredientMap (Dict String (List Quantity))
+map : (RecipePart -> a) -> Recipe -> List a
+map f (Recipe recipe) =
+    List.map f recipe
 
 
-ingredientMapFromDict : Dict String (List Quantity) -> IngredientMap
-ingredientMapFromDict dict =
-    IngredientMap dict
-
-
-ingredientMapFrom : List ( String, Maybe Quantity ) -> IngredientMap
-ingredientMapFrom items =
-    List.foldl
-        (\( listName, maybeQuantity ) accu ->
-            Dict.update listName
-                (\maybeQuantities ->
-                    let
-                        rest =
-                            Maybe.withDefault [] maybeQuantities
-                    in
-                    case maybeQuantity of
-                        Just quantity ->
-                            Just <| quantity :: rest
-
-                        Nothing ->
-                            Just rest
-                )
-                accu
-        )
-        Dict.empty
-        items
-        |> Dict.map (\_ v -> List.reverse v)
-        |> IngredientMap
-
-
-mapIngredients : (String -> List Quantity -> a) -> Recipe -> List a
-mapIngredients f (Recipe recipe) =
+ingredients : Recipe -> List Ingredient
+ingredients (Recipe recipe) =
     List.filterMap
         (\part ->
             case part of
                 IngredientPart ingred ->
-                    Just ( getListName ingred, getQuantity ingred )
+                    Just ingred
 
                 _ ->
                     Nothing
         )
         recipe
-        |> ingredientMapFrom
-        |> mapIngredientMap f
-
-
-mapIngredientMap : (String -> List Quantity -> a) -> IngredientMap -> List a
-mapIngredientMap f (IngredientMap dict) =
-    Dict.toList dict
-        |> List.map (\( listName, quantities ) -> f listName quantities)
-
-
-map : (RecipePart -> a) -> Recipe -> List a
-map f (Recipe recipe) =
-    List.map f recipe
 
 
 
