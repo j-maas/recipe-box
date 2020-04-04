@@ -15,13 +15,13 @@ main =
 
 
 type alias Model =
-    { recipe : Recipe
+    { recipe : Result Recipe.ParsingError Recipe
     }
 
 
 init : Model
 init =
-    { recipe = Recipe.parse "Cook an <egg (1)>." |> Result.withDefault (Recipe.from [])
+    { recipe = Recipe.parse "Fry the <egg (1)> in <butter (15 g)>."
     }
 
 
@@ -40,7 +40,12 @@ view : Model -> Html msg
 view model =
     Html.main_ []
         [ Html.h1 [] [ Html.text "Recipe Shopper" ]
-        , viewRecipe model.recipe
+        , case model.recipe of
+            Ok recipe ->
+                viewRecipe recipe
+
+            Err error ->
+                Html.text error
         ]
 
 
@@ -57,7 +62,7 @@ viewRecipe recipe =
                         let
                             quantityText =
                                 ingredient.quantity
-                                    |> Maybe.map (\amount -> String.fromInt amount ++ " ")
+                                    |> Maybe.map (\quantity -> Recipe.quantityToString quantity ++ " ")
                                     |> Maybe.withDefault ""
 
                             text =

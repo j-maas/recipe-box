@@ -36,7 +36,18 @@ suite =
                         (Ok <|
                             Recipe.from
                                 [ PlainPart "Cook an "
-                                , IngredientPart { name = "egg", quantity = Just 1 }
+                                , IngredientPart { name = "egg", quantity = Just (quantityAmount 1) }
+                                , PlainPart "."
+                                ]
+                        )
+        , test "ingredient with unit" <|
+            \_ ->
+                Recipe.parse "Boil <water (200 ml)>."
+                    |> Expect.equal
+                        (Ok <|
+                            Recipe.from
+                                [ PlainPart "Boil "
+                                , IngredientPart { name = "water", quantity = Just (quantity 200 "ml") }
                                 , PlainPart "."
                                 ]
                         )

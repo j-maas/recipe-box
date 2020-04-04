@@ -1,4 +1,4 @@
-module Recipe exposing (Recipe, RecipePart(..), from, ingredients, map, parse)
+module Recipe exposing (Quantity, Recipe, RecipePart(..), ParsingError, from, ingredients, map, parse, quantity, quantityAmount, quantityToString)
 
 import Parser exposing ((|.), (|=), Parser)
 
@@ -22,8 +22,27 @@ type alias Ingredient =
     }
 
 
-type alias Quantity =
-    Int
+type Quantity
+    = Quantity Int (Maybe String)
+
+
+quantityAmount : Int -> Quantity
+quantityAmount number =
+    Quantity number Nothing
+
+
+quantity : Int -> String -> Quantity
+quantity number unit =
+    Quantity number (Just unit)
+
+
+quantityToString : Quantity -> String
+quantityToString (Quantity number maybeUnit) =
+    let
+        unit =
+            Maybe.map (\u -> " " ++ u) maybeUnit |> Maybe.withDefault ""
+    in
+    String.fromInt number ++ unit
 
 
 from : RecipeParts -> Recipe
@@ -112,10 +131,18 @@ parseIngredient =
                 |> Parser.map String.trimRight
            )
         |= parseOptional
-            (Parser.succeed identity
+            (Parser.succeed Quantity
                 |. chompWhitespace
                 |. Parser.symbol "("
                 |= Parser.int
+                |= parseOptional
+                    (Parser.succeed
+                        (\chomped ->
+                            String.trim chomped
+                        )
+                        |. Parser.chompIf isWhitespace
+                        |= Parser.getChompedString (Parser.chompWhile (\c -> c /= ')'))
+                    )
                 |. Parser.symbol ")"
             )
         |. Parser.symbol ">"
