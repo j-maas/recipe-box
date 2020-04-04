@@ -23,7 +23,7 @@ type alias Model =
 
 init : Model
 init =
-    { recipe = "Chop the <onion (1: large onion)>. Fry the onion in <butter (15 g)>. Boil the <egg (1)> in the <water (0.5 l)>. Season with <salt (a pinch of)>."
+    { recipe = "Chop the <onion (1: large onion)>. Fry the onion in <butter (15 g)>. Boil the <egg (1)> in the <water (0.5 l)>. Season with <salt (a pinch of)>. Wait one minute, then boil the other <egg (1)>."
     }
 
 
@@ -55,25 +55,23 @@ view model =
 viewRecipe : Recipe -> Html Msg
 viewRecipe recipe =
     let
-        ingredients =
-            Recipe.ingredients recipe
-
         ingredientsView =
             Html.ul []
-                (List.map
-                    (\ingredient ->
+                (Recipe.mapIngredients
+                    (\name quantities ->
                         let
-                            quantityText =
-                                Recipe.getQuantity ingredient
-                                    |> Maybe.map (\quantity -> stringFromQuantity quantity ++ " ")
-                                    |> Maybe.withDefault ""
+                            quantitiesText =
+                                (List.map quantityText quantities |> String.join " + ") ++ " "
+
+                            quantityText quantity =
+                                stringFromQuantity quantity
 
                             text =
-                                quantityText ++ Recipe.getListName ingredient
+                                quantitiesText ++ name
                         in
                         Html.li [] [ Html.text text ]
                     )
-                    ingredients
+                    recipe
                 )
 
         descriptionView =
