@@ -21,7 +21,7 @@ type alias Model =
 
 init : Model
 init =
-    { recipe = [ Recipe.Plain "Order some pizza." ]
+    { recipe = [ Recipe.Plain "Cook an <egg>." ]
     }
 
 

@@ -13,8 +13,20 @@ suite =
             \_ ->
                 Recipe.parse "Order some pizza."
                     |> Expect.equal
-                        (Just
-                            [ Plain "Order some pizza."
-                            ]
+                        (Just <|
+                            Recipe.from
+                                [ PlainPart "Order some pizza."
+                                ]
+                        )
+        , test "unquantified ingredient" <|
+            \_ ->
+                Recipe.parse "Cook an <egg>."
+                    |> Expect.equal
+                        (Just <|
+                            Recipe.from
+                                [ PlainPart "Cook an "
+                                , IngredientPart "egg"
+                                , PlainPart "."
+                                ]
                         )
         ]
