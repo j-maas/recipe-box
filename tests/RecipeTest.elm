@@ -43,6 +43,8 @@ suite =
                                     , PlainPart "."
                                     ]
                             )
+
+            -- Issue with `Parser.float`. See https://github.com/elm/parser/issues/28
             , test "does not mistake leading e for float" <|
                 \_ ->
                     Recipe.parse "<not a float (e as in exponent)>"
