@@ -21,7 +21,7 @@ type alias Model =
 
 init : Model
 init =
-    { recipe = Recipe.parse "Cook an <egg>." |> Result.withDefault (Recipe.from [])
+    { recipe = Recipe.parse "Cook an <egg (1)>." |> Result.withDefault (Recipe.from [])
     }
 
 
@@ -54,7 +54,16 @@ viewRecipe recipe =
             Html.ul []
                 (List.map
                     (\ingredient ->
-                        Html.li [] [ Html.text ingredient ]
+                        let
+                            quantityText =
+                                ingredient.quantity
+                                    |> Maybe.map (\amount -> String.fromInt amount ++ " ")
+                                    |> Maybe.withDefault ""
+
+                            text =
+                                quantityText ++ ingredient.name
+                        in
+                        Html.li [] [ Html.text text ]
                     )
                     ingredients
                 )
@@ -67,7 +76,7 @@ viewRecipe recipe =
                             Html.text text
 
                         Recipe.IngredientPart ingredient ->
-                            Html.text ingredient
+                            Html.text ingredient.name
                 )
                 recipe
     in
