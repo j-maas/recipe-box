@@ -178,7 +178,7 @@ parseQuantity endChars =
                     Nothing ->
                         Amount number
             )
-            |= Parser.float
+            |= parseFloat
             |= parseOptional
                 (Parser.succeed identity
                     |. Parser.symbol " "
@@ -194,20 +194,6 @@ parseDescription endChars =
         (\inside ->
             String.trim inside |> Description
         )
-        |= parseInsideText endChars
-
-
-parseAmount : Parser Quantity
-parseAmount =
-    Parser.succeed Amount
-        |= Parser.float
-
-
-parseMeasure : List Char -> Parser Quantity
-parseMeasure endChars =
-    Parser.succeed Measure
-        |= Parser.float
-        |. Parser.symbol " "
         |= parseInsideText endChars
 
 
@@ -230,16 +216,6 @@ parseOptional parser =
         [ parser |> Parser.map Just
         , Parser.succeed Nothing
         ]
-
-
-chompWhitespace : Parser ()
-chompWhitespace =
-    Parser.chompWhile isWhitespace
-
-
-isWhitespace : Char -> Bool
-isWhitespace c =
-    c == ' ' || c == '\t' || c == '\u{000D}' || c == '\n'
 
 
 
@@ -306,3 +282,17 @@ problemToString p =
 
         Parser.BadRepeat ->
             "bad repeat"
+
+
+{-| The built-in float parser has a bug with leading 'e's.
+See <https://github.com/elm/parser/issues/28>
+-}
+parseFloat : Parser Float
+parseFloat =
+    Parser.backtrackable
+        (Parser.oneOf
+            [ Parser.symbol "e"
+                |> Parser.andThen (\_ -> Parser.problem "A float cannot begin with e")
+            , Parser.float
+            ]
+        )

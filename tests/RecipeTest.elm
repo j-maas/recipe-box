@@ -43,6 +43,15 @@ suite =
                                     , PlainPart "."
                                     ]
                             )
+            , test "does not mistake leading e for float" <|
+                \_ ->
+                    Recipe.parse "<not a float (e as in exponent)>"
+                        |> Expect.equal
+                            (Ok <|
+                                Recipe.from
+                                    [ IngredientPart <| ingredient "not a float" (Just (Description "e as in exponent"))
+                                    ]
+                            )
             , test "ingredient with amount" <|
                 \_ ->
                     Recipe.parse "Cook an <egg (1)>."
