@@ -43,7 +43,7 @@ update msg model =
 view : Model -> Html Msg
 view model =
     Html.main_ []
-        [ Html.h1 [] [ Html.text "Recipe Shopper" ]
+        [ Html.h1 [] [ Html.text "Smart Recipes" ]
         , case Recipe.parse model.recipe of
             Ok recipe ->
                 viewRecipe recipe
@@ -113,16 +113,3 @@ viewRecipe recipe =
             :: Html.h2 [] [ Html.text "Description" ]
             :: descriptionView
         )
-
-
-stringFromQuantity : Recipe.Quantity -> String
-stringFromQuantity quantity =
-    case quantity of
-        Recipe.Description unit ->
-            unit
-
-        Recipe.Amount amount ->
-            String.fromFloat amount
-
-        Recipe.Measure amount unit ->
-            String.fromFloat amount ++ " " ++ unit
