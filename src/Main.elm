@@ -1,9 +1,11 @@
 module Main exposing (main)
 
 import Browser
+import Css exposing (auto, em, num, zero)
+import Css.Global as Global
 import Dict
 import Html.Styled as Html exposing (Html)
-import Html.Styled.Attributes as Attributes
+import Html.Styled.Attributes as Attributes exposing (css)
 import Html.Styled.Events as Events
 import IngredientMap
 import Recipe exposing (Recipe)
@@ -42,15 +44,32 @@ update msg model =
 
 view : Model -> Html Msg
 view model =
-    Html.main_ []
-        [ Html.h1 [] [ Html.text "Recipe Box" ]
-        , case Recipe.parse model.recipe of
-            Ok recipe ->
-                viewRecipe recipe
+    Html.div []
+        [ Html.node "link" [ Attributes.href "https://fonts.googleapis.com/css2?family=Bree+Serif&display=swap", Attributes.rel "stylesheet" ] []
+        , Html.node "link" [ Attributes.href "https://fonts.googleapis.com/css2?family=Zilla+Slab:ital,wght@0,400;0,700;1,400;1,700&display=swap", Attributes.rel "stylesheet" ] []
+        , Html.main_
+            [ css
+                [ Css.fontFamilies [ "Zilla Slab", "Palatino", "serif" ]
+                , Css.lineHeight (num 1.4)
+                , Css.maxWidth (em 48)
+                , Css.margin2 zero auto
+                , Css.marginTop (em 2)
+                , Global.descendants
+                    [ Global.typeSelector "ul"
+                        [ Css.margin zero
+                        ]
+                    ]
+                ]
+            ]
+            [ Html.h1 [ css [ headingStyle ] ] [ Html.text "Recipe Box" ]
+            , case Recipe.parse model.recipe of
+                Ok recipe ->
+                    viewRecipe recipe
 
-            Err error ->
-                Html.text error
-        , Html.textarea [ Events.onInput EditedRecipe, Attributes.value model.recipe ] []
+                Err error ->
+                    Html.text error
+            , Html.textarea [ Events.onInput EditedRecipe, Attributes.value model.recipe ] []
+            ]
         ]
 
 
@@ -107,9 +126,31 @@ viewRecipe recipe =
                 )
                 recipe
     in
-    Html.article []
-        (Html.h2 [] [ Html.text "Ingredients" ]
-            :: ingredientsView
-            :: Html.h2 [] [ Html.text "Description" ]
+    Html.article
+        []
+        (Html.details []
+            [ Html.summary []
+                [ Html.h2
+                    [ css
+                        [ headingStyle
+                        , Css.display Css.inlineBlock
+                        ]
+                    ]
+                    [ Html.text "Ingredients" ]
+                ]
+            , ingredientsView
+            ]
+            :: Html.h2 [ css [ headingStyle ] ] [ Html.text "Description" ]
             :: descriptionView
         )
+
+
+headingStyle : Css.Style
+headingStyle =
+    Css.batch
+        [ Css.fontFamilies [ "Bree Serif", "Georgia", "serif" ]
+        , Css.lineHeight (num 1)
+        , Css.margin zero
+        , Css.marginTop (em 0.6)
+        , Css.marginBottom (em 0.3)
+        ]
