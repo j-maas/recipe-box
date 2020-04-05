@@ -1,8 +1,9 @@
 # Recipe Box
 
 ## TODOs
-- [ ] Allow nested parentheses in quantities.
-- [ ] Experiment with having quantities first.
+- [x] Allow nested parentheses in quantities.
+- [x] Experiment with having quantities first.
+- [ ] Highlight occurrences of ingredients on hover.
 - [ ] Allow setting portions.
 - [ ] Allow switching measurement units.
 - [ ] Store multiple recipes.
