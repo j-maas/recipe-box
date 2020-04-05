@@ -241,10 +241,10 @@ viewRecipe recipe =
                                         ""
 
                                     else
-                                        String.join " + " quantitiesTexts ++ " "
+                                        " (" ++ String.join " + " quantitiesTexts ++ ")"
 
                                 text =
-                                    quantitiesText ++ name
+                                    name ++ quantitiesText
                             in
                             Html.li [] [ Html.text text ]
                         )
