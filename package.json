@@ -10,6 +10,7 @@
   },
   "scripts": {
     "test": "elm-test",
+    "build": "elm make src/Main.elm --output dist/elm.js",
     "watch": "elm-live src/Main.elm --dir ./dist --start-page index.html -- --output dist/elm.js"
   }
 }
