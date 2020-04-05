@@ -44,10 +44,7 @@ update msg model =
 
 view : Model -> Html Msg
 view model =
-    Html.div []
-        [ Html.node "link" [ Attributes.href "https://fonts.googleapis.com/css2?family=Bree+Serif&display=swap", Attributes.rel "stylesheet" ] []
-        , Html.node "link" [ Attributes.href "https://fonts.googleapis.com/css2?family=Zilla+Slab:ital,wght@0,400;0,700;1,400;1,700&display=swap", Attributes.rel "stylesheet" ] []
-        , Html.main_
+    Html.main_
         [ css
             [ Css.fontFamilies [ "Zilla Slab", "Palatino", "serif" ]
             , Css.lineHeight (num 1.4)
