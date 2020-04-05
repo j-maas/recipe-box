@@ -1,7 +1,7 @@
 module Main exposing (main)
 
 import Browser
-import Css exposing (auto, em, num, zero)
+import Css exposing (auto, em, num, pct, zero)
 import Css.Global as Global
 import Dict
 import Html.Styled as Html exposing (Html)
@@ -48,36 +48,43 @@ view model =
         [ Html.node "link" [ Attributes.href "https://fonts.googleapis.com/css2?family=Bree+Serif&display=swap", Attributes.rel "stylesheet" ] []
         , Html.node "link" [ Attributes.href "https://fonts.googleapis.com/css2?family=Zilla+Slab:ital,wght@0,400;0,700;1,400;1,700&display=swap", Attributes.rel "stylesheet" ] []
         , Html.main_
-            [ css
-                [ Css.fontFamilies [ "Zilla Slab", "Palatino", "serif" ]
-                , Css.lineHeight (num 1.4)
-                , Css.maxWidth (em 48)
-                , Css.margin2 zero auto
-                , Css.marginTop (em 2)
-                , Global.descendants
-                    [ Global.typeSelector "ul"
-                        [ Css.margin zero
-                        ]
-                    , Global.typeSelector "p"
-                        [ Css.margin zero
-                        , Global.adjacentSiblings
-                            [ Global.typeSelector "p"
-                                [ Css.marginTop (em 0.6)
-                                ]
+        [ css
+            [ Css.fontFamilies [ "Zilla Slab", "Palatino", "serif" ]
+            , Css.lineHeight (num 1.4)
+            , Css.maxWidth (em 48)
+            , Css.margin2 zero auto
+            , Css.marginTop (em 2)
+            , Global.descendants
+                [ Global.typeSelector "ul"
+                    [ Css.margin zero
+                    ]
+                , Global.typeSelector "p"
+                    [ Css.margin zero
+                    , Global.adjacentSiblings
+                        [ Global.typeSelector "p"
+                            [ Css.marginTop (em 0.6)
                             ]
                         ]
                     ]
                 ]
             ]
-            [ Html.h1 [ css [ headingStyle ] ] [ Html.text "Recipe Box" ]
-            , case Recipe.parse model.recipe of
-                Ok recipe ->
-                    viewRecipe recipe
+        ]
+        [ Html.h1 [ css [ headingStyle ] ] [ Html.text "Recipe Box" ]
+        , case Recipe.parse model.recipe of
+            Ok recipe ->
+                viewRecipe recipe
 
-                Err error ->
-                    Html.text error
-            , Html.textarea [ Events.onInput EditedRecipe, Attributes.value model.recipe ] []
+            Err error ->
+                Html.text error
+        , Html.textarea
+            [ Events.onInput EditedRecipe
+            , Attributes.value model.recipe
+            , css
+                [ Css.width (pct 100)
+                , Css.maxWidth (pct 100)
+                ]
             ]
+            []
         ]
 
 
