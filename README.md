@@ -3,6 +3,8 @@
 ## TODOs
 - [x] Allow nested parentheses in quantities.
 - [x] Experiment with having quantities first.
+- [x] Parse paragraphs.
+- [ ] Recipe titles.
 - [ ] Highlight occurrences of ingredients on hover.
 - [ ] Allow setting portions.
 - [ ] Allow switching measurement units.

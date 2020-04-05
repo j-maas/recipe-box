@@ -58,6 +58,14 @@ view model =
                     [ Global.typeSelector "ul"
                         [ Css.margin zero
                         ]
+                    , Global.typeSelector "p"
+                        [ Css.margin zero
+                        , Global.adjacentSiblings
+                            [ Global.typeSelector "p"
+                                [ Css.marginTop (em 0.6)
+                                ]
+                            ]
+                        ]
                     ]
                 ]
             ]
@@ -125,6 +133,7 @@ viewRecipe recipe =
                             Html.text (Recipe.getText ingredient)
                 )
                 recipe
+                |> List.map (\paragraph -> Html.p [] paragraph)
     in
     Html.article
         []

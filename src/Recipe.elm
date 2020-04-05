@@ -13,7 +13,7 @@ type Recipe
 
 
 type alias RecipeParts =
-    List RecipePart
+    List (List RecipePart)
 
 
 type RecipePart
@@ -83,23 +83,23 @@ type alias ParsingError =
     String
 
 
-map : (RecipePart -> a) -> Recipe -> List a
+map : (RecipePart -> a) -> Recipe -> List (List a)
 map f (Recipe recipe) =
-    List.map f recipe
+    List.map (\paragraph -> List.map f paragraph) recipe
 
 
 ingredients : Recipe -> List Ingredient
 ingredients (Recipe recipe) =
-    List.filterMap
-        (\part ->
-            case part of
-                IngredientPart ingred ->
-                    Just ingred
+    List.concat recipe
+        |> List.filterMap
+            (\part ->
+                case part of
+                    IngredientPart ingred ->
+                        Just ingred
 
-                _ ->
-                    Nothing
-        )
-        recipe
+                    _ ->
+                        Nothing
+            )
 
 
 
@@ -108,23 +108,25 @@ ingredients (Recipe recipe) =
 
 parseRecipe : Parser Recipe
 parseRecipe =
-    Parser.loop [] parseRecursion
+    Parser.loop ( [], [] ) parseRecursion
 
 
-parseRecursion : RecipeParts -> Parser (Parser.Step RecipeParts Recipe)
-parseRecursion state =
+parseRecursion : ( List RecipePart, RecipeParts ) -> Parser (Parser.Step ( List RecipePart, RecipeParts ) Recipe)
+parseRecursion ( next, paragraphs ) =
     Parser.oneOf
-        [ Parser.succeed (\ingred -> Parser.Loop (ingred :: state))
+        [ Parser.symbol "\n\n"
+            |> Parser.map (\_ -> Parser.Loop ( [], List.reverse next :: paragraphs ))
+        , Parser.succeed (\ingred -> Parser.Loop ( ingred :: next, paragraphs ))
             |= parseIngredient
-        , Parser.succeed (\plain -> Parser.Loop (plain :: state))
-            |= parsePlain
-        , Parser.end |> Parser.map (\_ -> Parser.Done (Recipe <| List.reverse state))
+        , Parser.succeed (\plain -> Parser.Loop ( plain :: next, paragraphs ))
+            |= parsePlain (Set.fromList [ '<', '\n' ])
+        , Parser.end |> Parser.map (\_ -> Parser.Done (List.reverse next :: paragraphs |> List.reverse |> Recipe))
         ]
 
 
-parsePlain : Parser RecipePart
-parsePlain =
-    Parser.getChompedString (Parser.chompWhile (\c -> c /= '<'))
+parsePlain : Set Char -> Parser RecipePart
+parsePlain endChars =
+    Parser.getChompedString (Parser.chompWhile (\c -> not (Set.member c endChars)))
         |> Parser.andThen
             (\text ->
                 if String.isEmpty text then

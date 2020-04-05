@@ -18,7 +18,19 @@ suite =
                         |> Expect.equal
                             (Ok <|
                                 Recipe.from
-                                    [ PlainPart "Order some pizza."
+                                    [ [ PlainPart "Order some pizza."
+                                      ]
+                                    ]
+                            )
+            , test "parses paragraphs" <|
+                \_ ->
+                    Recipe.parse "Order some pizza.\n\nLay back.\n\nEnjoy."
+                        |> Expect.equal
+                            (Ok <|
+                                Recipe.from
+                                    [ [ PlainPart "Order some pizza." ]
+                                    , [ PlainPart "Lay back." ]
+                                    , [ PlainPart "Enjoy." ]
                                     ]
                             )
             , test "unquantified ingredient" <|
@@ -27,9 +39,10 @@ suite =
                         |> Expect.equal
                             (Ok <|
                                 Recipe.from
-                                    [ PlainPart "Cook an "
-                                    , IngredientPart <| ingredient "egg" Nothing
-                                    , PlainPart "."
+                                    [ [ PlainPart "Cook an "
+                                      , IngredientPart <| ingredient "egg" Nothing
+                                      , PlainPart "."
+                                      ]
                                     ]
                             )
             , test "ingredient with descriptive quantity" <|
@@ -38,9 +51,10 @@ suite =
                         |> Expect.equal
                             (Ok <|
                                 Recipe.from
-                                    [ PlainPart "Add "
-                                    , IngredientPart <| ingredient "salt" (Just (Description "a pinch"))
-                                    , PlainPart "."
+                                    [ [ PlainPart "Add "
+                                      , IngredientPart <| ingredient "salt" (Just (Description "a pinch"))
+                                      , PlainPart "."
+                                      ]
                                     ]
                             )
 
@@ -51,7 +65,8 @@ suite =
                         |> Expect.equal
                             (Ok <|
                                 Recipe.from
-                                    [ IngredientPart <| ingredient "not a float" (Just (Description "e as in exponent"))
+                                    [ [ IngredientPart <| ingredient "not a float" (Just (Description "e as in exponent"))
+                                      ]
                                     ]
                             )
             , test "allows parentheses in quantities" <|
@@ -60,9 +75,10 @@ suite =
                         |> Expect.equal
                             (Ok <|
                                 Recipe.from
-                                    [ PlainPart "Cook in "
-                                    , IngredientPart <| ingredient "butter" (Just (Description "some (for frying)"))
-                                    , PlainPart "."
+                                    [ [ PlainPart "Cook in "
+                                      , IngredientPart <| ingredient "butter" (Just (Description "some (for frying)"))
+                                      , PlainPart "."
+                                      ]
                                     ]
                             )
             , test "ingredient with amount" <|
@@ -71,9 +87,10 @@ suite =
                         |> Expect.equal
                             (Ok <|
                                 Recipe.from
-                                    [ PlainPart "Cook an "
-                                    , IngredientPart <| ingredient "egg" (Just (Amount 1))
-                                    , PlainPart "."
+                                    [ [ PlainPart "Cook an "
+                                      , IngredientPart <| ingredient "egg" (Just (Amount 1))
+                                      , PlainPart "."
+                                      ]
                                     ]
                             )
             , test "ingredient with unit" <|
@@ -82,9 +99,10 @@ suite =
                         |> Expect.equal
                             (Ok <|
                                 Recipe.from
-                                    [ PlainPart "Boil "
-                                    , IngredientPart <| ingredient "water" (Just (Measure 200 "ml"))
-                                    , PlainPart "."
+                                    [ [ PlainPart "Boil "
+                                      , IngredientPart <| ingredient "water" (Just (Measure 200 "ml"))
+                                      , PlainPart "."
+                                      ]
                                     ]
                             )
             , test "ingredient with decimal quantity" <|
@@ -93,9 +111,10 @@ suite =
                         |> Expect.equal
                             (Ok <|
                                 Recipe.from
-                                    [ PlainPart "Boil "
-                                    , IngredientPart <| ingredient "water" (Just (Measure 0.2 "l"))
-                                    , PlainPart "."
+                                    [ [ PlainPart "Boil "
+                                      , IngredientPart <| ingredient "water" (Just (Measure 0.2 "l"))
+                                      , PlainPart "."
+                                      ]
                                     ]
                             )
             , test "ingredient with amount and different list name" <|
@@ -104,9 +123,10 @@ suite =
                         |> Expect.equal
                             (Ok <|
                                 Recipe.from
-                                    [ PlainPart "Cut the "
-                                    , IngredientPart <| ingredientWithName "onion" (Just (Amount 1)) "large onion"
-                                    , PlainPart "."
+                                    [ [ PlainPart "Cut the "
+                                      , IngredientPart <| ingredientWithName "onion" (Just (Amount 1)) "large onion"
+                                      , PlainPart "."
+                                      ]
                                     ]
                             )
             ]
@@ -114,13 +134,14 @@ suite =
             [ test "lists ingredients" <|
                 \_ ->
                     Recipe.from
-                        [ PlainPart "Cut the "
-                        , IngredientPart <|
-                            ingredient "onions" (Just (Amount 2))
-                        , PlainPart " and the "
-                        , IngredientPart <|
-                            ingredient "bell pepper" Nothing
-                        , PlainPart "."
+                        [ [ PlainPart "Cut the "
+                          , IngredientPart <|
+                                ingredient "onions" (Just (Amount 2))
+                          , PlainPart " and the "
+                          , IngredientPart <|
+                                ingredient "bell pepper" Nothing
+                          , PlainPart "."
+                          ]
                         ]
                         |> IngredientMap.fromRecipe
                         |> Expect.equalDicts
@@ -142,16 +163,17 @@ suite =
             , test "adds up ingredients" <|
                 \_ ->
                     Recipe.from
-                        [ PlainPart "Boil an "
-                        , IngredientPart <|
-                            ingredientWithName "egg" (Just (Amount 1)) "eggs"
-                        , PlainPart " in the "
-                        , IngredientPart <|
-                            ingredient "water" Nothing
-                        , PlainPart ". Fry the other "
-                        , IngredientPart <|
-                            ingredientWithName "egg" (Just (Amount 1)) "eggs"
-                        , PlainPart " in a pan."
+                        [ [ PlainPart "Boil an "
+                          , IngredientPart <|
+                                ingredientWithName "egg" (Just (Amount 1)) "eggs"
+                          , PlainPart " in the "
+                          , IngredientPart <|
+                                ingredient "water" Nothing
+                          , PlainPart ". Fry the other "
+                          , IngredientPart <|
+                                ingredientWithName "egg" (Just (Amount 1)) "eggs"
+                          , PlainPart " in a pan."
+                          ]
                         ]
                         |> IngredientMap.fromRecipe
                         |> Expect.equalDicts
