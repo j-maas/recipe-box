@@ -13,9 +13,10 @@ To build everything, run `npm run build` and deploy the `dist` folder.
 - [x] Experiment with having quantities first.
 - [x] Parse paragraphs.
 - [x] Recipe titles.
+- [x] Store recipe persistently.
+- [x] Store multiple recipes.
+- [ ] Generate shopping list from multiple recipes.
+- [ ] Import and export recipes from and to files.
+- [ ] Filter recipes.
 - [ ] Highlight occurrences of ingredients on hover.
 - [ ] Allow setting portions.
-- [ ] Allow switching measurement units.
-- [ ] Store multiple recipes.
-- [ ] Import and export recipes from and to files.
-- [ ] Generate shopping list from multiple recipes.
