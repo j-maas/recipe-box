@@ -1,7 +1,4 @@
---module Recipe exposing (Ingredient, ParsingError, Quantity(..), Recipe, RecipePart(..), from, getListName, getQuantity, getText, ingredient, ingredientWithName, ingredients, map, parse)
-
-
-module Recipe exposing (..)
+module Recipe exposing (Ingredient, ParsingError, Quantity(..), Recipe, RecipePart(..), RecipeParts, description, from, getListName, getQuantity, getText, ingredient, ingredientWithName, ingredients, map, parse, title)
 
 import Dict exposing (Dict)
 import Parser exposing ((|.), (|=), Parser)
@@ -9,7 +6,7 @@ import Set exposing (Set)
 
 
 type Recipe
-    = Recipe RecipeParts
+    = Recipe { title : String, description : RecipeParts }
 
 
 type alias RecipeParts =
@@ -68,9 +65,12 @@ type Quantity
     | Description String
 
 
-from : RecipeParts -> Recipe
-from parts =
-    Recipe parts
+from : String -> RecipeParts -> Recipe
+from t parts =
+    Recipe
+        { title = t
+        , description = parts
+        }
 
 
 parse : String -> Result ParsingError Recipe
@@ -85,12 +85,22 @@ type alias ParsingError =
 
 map : (RecipePart -> a) -> Recipe -> List (List a)
 map f (Recipe recipe) =
-    List.map (\paragraph -> List.map f paragraph) recipe
+    List.map (\paragraph -> List.map f paragraph) recipe.description
 
 
-ingredients : Recipe -> List Ingredient
-ingredients (Recipe recipe) =
-    List.concat recipe
+title : Recipe -> String
+title (Recipe recipe) =
+    recipe.title
+
+
+description : Recipe -> RecipeParts
+description (Recipe recipe) =
+    recipe.description
+
+
+ingredients : RecipeParts -> List Ingredient
+ingredients parts =
+    List.concat parts
         |> List.filterMap
             (\part ->
                 case part of
@@ -108,10 +118,20 @@ ingredients (Recipe recipe) =
 
 parseRecipe : Parser Recipe
 parseRecipe =
-    Parser.loop ( [], [] ) parseRecursion
+    Parser.succeed
+        (\t desc ->
+            Recipe
+                { title = t
+                , description = desc
+                }
+        )
+        |. Parser.symbol "# "
+        |= Parser.getChompedString (Parser.chompUntil "\n")
+        |. Parser.chompWhile (\c -> c == '\n')
+        |= Parser.loop ( [], [] ) parseRecursion
 
 
-parseRecursion : ( List RecipePart, RecipeParts ) -> Parser (Parser.Step ( List RecipePart, RecipeParts ) Recipe)
+parseRecursion : ( List RecipePart, RecipeParts ) -> Parser (Parser.Step ( List RecipePart, RecipeParts ) RecipeParts)
 parseRecursion ( next, paragraphs ) =
     Parser.oneOf
         [ Parser.symbol "\n\n"
@@ -122,7 +142,7 @@ parseRecursion ( next, paragraphs ) =
             |= parseIngredient
         , Parser.succeed (\plain -> Parser.Loop ( plain :: next, paragraphs ))
             |= parsePlain (Set.fromList [ '<', '\n' ])
-        , Parser.end |> Parser.map (\_ -> Parser.Done (List.reverse next :: paragraphs |> List.reverse |> Recipe))
+        , Parser.end |> Parser.map (\_ -> Parser.Done (List.reverse next :: paragraphs |> List.reverse))
         ]
 
 

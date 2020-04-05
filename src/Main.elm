@@ -90,7 +90,7 @@ viewRecipe recipe =
     let
         ingredientsView =
             Html.ul []
-                (IngredientMap.fromRecipe recipe
+                (IngredientMap.fromDescription (Recipe.description recipe)
                     |> Dict.toList
                     |> List.map
                         (\( name, quantities ) ->
@@ -141,19 +141,20 @@ viewRecipe recipe =
     in
     Html.article
         []
-        (Html.details []
-            [ Html.summary []
-                [ Html.h2
-                    [ css
-                        [ headingStyle
-                        , Css.display Css.inlineBlock
+        (Html.h2 [ css [ headingStyle ] ] [ Html.text <| Recipe.title recipe ]
+            :: Html.details []
+                [ Html.summary []
+                    [ Html.h3
+                        [ css
+                            [ headingStyle
+                            , Css.display Css.inlineBlock
+                            ]
                         ]
+                        [ Html.text "Ingredients" ]
                     ]
-                    [ Html.text "Ingredients" ]
+                , ingredientsView
                 ]
-            , ingredientsView
-            ]
-            :: Html.h2 [ css [ headingStyle ] ] [ Html.text "Description" ]
+            :: Html.h3 [ css [ headingStyle ] ] [ Html.text "Description" ]
             :: descriptionView
         )
 

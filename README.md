@@ -12,7 +12,7 @@ To build everything, run `npm run build` and deploy the `dist` folder.
 - [x] Allow nested parentheses in quantities.
 - [x] Experiment with having quantities first.
 - [x] Parse paragraphs.
-- [ ] Recipe titles.
+- [x] Recipe titles.
 - [ ] Highlight occurrences of ingredients on hover.
 - [ ] Allow setting portions.
 - [ ] Allow switching measurement units.
