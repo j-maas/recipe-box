@@ -1,4 +1,4 @@
-# Smart Recipes
+# Recipe Box
 
 ## TODOs
 - [ ] Allow nested parentheses in quantities.

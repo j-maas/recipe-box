@@ -43,7 +43,7 @@ update msg model =
 view : Model -> Html Msg
 view model =
     Html.main_ []
-        [ Html.h1 [] [ Html.text "Smart Recipes" ]
+        [ Html.h1 [] [ Html.text "Recipe Box" ]
         , case Recipe.parse model.recipe of
             Ok recipe ->
                 viewRecipe recipe

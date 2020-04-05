@@ -1,5 +1,5 @@
 {
-  "name": "smart-recipes",
+  "name": "recipe-box",
   "version": "0.1.0",
   "dependencies": {
     "elm": "^0.19.1-3",
