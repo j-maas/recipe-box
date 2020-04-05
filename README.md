@@ -18,5 +18,6 @@ To build everything, run `npm run build` and deploy the `dist` folder.
 - [ ] Generate shopping list from multiple recipes.
 - [ ] Import and export recipes from and to files.
 - [ ] Filter recipes.
+- [ ] Indicate how many ingredients there are.
 - [ ] Highlight occurrences of ingredients on hover.
 - [ ] Allow setting portions.
