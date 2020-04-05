@@ -152,7 +152,7 @@ parseIngredient =
                 )
         )
         |. Parser.symbol "<"
-        |= parseInsideTextWithoutParens (Set.fromList [ '(', '>' ])
+        |= parseUntil (Set.fromList [ '(', '>' ])
         |= parseOptional
             (Parser.succeed
                 (\quant listName ->
@@ -164,7 +164,7 @@ parseIngredient =
                 |= parseOptional
                     (Parser.succeed String.trim
                         |. Parser.symbol ":"
-                        |= parseInsideTextWithParens (Set.fromList [ ')' ])
+                        |= parseUntilWithParens (Set.fromList [ ')' ])
                     )
                 |. Parser.symbol ")"
             )
@@ -187,7 +187,7 @@ parseQuantity endChars =
             |= parseOptional
                 (Parser.succeed identity
                     |. Parser.symbol " "
-                    |= parseInsideTextWithParens endChars
+                    |= parseUntilWithParens endChars
                 )
         , parseDescription endChars
         ]
@@ -199,11 +199,11 @@ parseDescription endChars =
         (\inside ->
             String.trim inside |> Description
         )
-        |= parseInsideTextWithParens endChars
+        |= parseUntilWithParens endChars
 
 
-parseInsideTextWithoutParens : Set Char -> Parser String
-parseInsideTextWithoutParens endChars =
+parseUntil : Set Char -> Parser String
+parseUntil endChars =
     Parser.getChompedString (Parser.chompWhile (\c -> not (Set.member c endChars)))
         |> Parser.andThen
             (\text ->
@@ -215,9 +215,9 @@ parseInsideTextWithoutParens endChars =
             )
 
 
-parseInsideTextWithParens : Set Char -> Parser String
-parseInsideTextWithParens endChars =
-    Parser.getChompedString (chompParens endChars)
+parseUntilWithParens : Set Char -> Parser String
+parseUntilWithParens endChars =
+    Parser.getChompedString (chompNestedParensUntil endChars)
         |> Parser.andThen
             (\text ->
                 if String.isEmpty text then
@@ -228,7 +228,8 @@ parseInsideTextWithParens endChars =
             )
 
 
-chompParens endChars =
+chompNestedParensUntil : Set Char -> Parser ()
+chompNestedParensUntil endChars =
     Parser.loop 0
         (\closeCount ->
             Parser.oneOf
