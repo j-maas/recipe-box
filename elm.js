@@ -9941,8 +9941,8 @@ var $author$project$Main$viewRecipe = function (recipe) {
 				var quantitiesTexts = _Utils_ap(
 					measures,
 					_Utils_ap(descriptions, amount));
-				var quantitiesText = $elm$core$List$isEmpty(quantitiesTexts) ? '' : (A2($elm$core$String$join, ' + ', quantitiesTexts) + ' ');
-				var text = _Utils_ap(quantitiesText, name);
+				var quantitiesText = $elm$core$List$isEmpty(quantitiesTexts) ? '' : (' (' + (A2($elm$core$String$join, ' + ', quantitiesTexts) + ')'));
+				var text = _Utils_ap(name, quantitiesText);
 				return A2(
 					$rtfeldman$elm_css$Html$Styled$li,
 					_List_Nil,
