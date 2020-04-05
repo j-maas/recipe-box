@@ -56,7 +56,8 @@ type Msg
     = SelectedRecipe String
     | ToOverview
     | EditRecipe String
-    | EditedRecipe String
+    | DeleteRecipe String
+    | Edited String
     | Save
     | NewRecipe
 
@@ -90,7 +91,15 @@ update msg model =
             in
             ( { model | current = newCurrent }, Cmd.none )
 
-        EditedRecipe code ->
+        DeleteRecipe title ->
+            ( { model
+                | recipes = Dict.remove title model.recipes
+                , current = None
+              }
+            , delete title
+            )
+
+        Edited code ->
             let
                 newCurrent =
                     case model.current of
@@ -135,6 +144,9 @@ update msg model =
 
 
 port save : { title : String, code : String } -> Cmd msg
+
+
+port delete : String -> Cmd msg
 
 
 subscriptions : Model -> Sub Msg
@@ -266,6 +278,8 @@ viewRecipe recipe =
                 :: Html.div []
                     [ Html.button [ Events.onClick <| EditRecipe (Recipe.title recipe) ]
                         [ Html.text "Edit" ]
+                    , Html.button [ Events.onClick <| DeleteRecipe (Recipe.title recipe) ]
+                        [ Html.text "Delete" ]
                     ]
                 :: Html.details []
                     [ Html.summary []
@@ -296,7 +310,7 @@ viewEditRecipe code errors =
                 []
          )
             ++ [ Html.textarea
-                    [ Events.onInput EditedRecipe
+                    [ Events.onInput Edited
                     , Attributes.value code
                     , css
                         [ Css.width (pct 100)

@@ -29,9 +29,26 @@
             node: document.getElementById('elm'),
             flags: recipes
         });
+
+        function save(title, code) {
+            console.info("Saving recipe with title '" + title + "'.")
+            localStorage.setItem(keyFromTitle(title), code);
+        }
+
+        function remove(title) {
+            console.info("Removing recipe with title '" + title + "'.")
+            localStorage.removeItem(keyFromTitle(title));
+        }
+
+        function keyFromTitle(title) {
+            return "recipe:" + title;
+        }
+
         app.ports.save.subscribe(function (data) {
-            console.info("Saving recipe with title '" + data.title + "'.")
-            localStorage.setItem("recipe:" + data.title, data.code);
+            save(data.title, data.code);
+        });
+        app.ports.delete.subscribe(function (title) {
+            remove(title);
         });
     </script>
 </body>
