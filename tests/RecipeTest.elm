@@ -54,6 +54,17 @@ suite =
                                     [ IngredientPart <| ingredient "not a float" (Just (Description "e as in exponent"))
                                     ]
                             )
+            , test "allows parentheses in quantities" <|
+                \_ ->
+                    Recipe.parse "Cook in <butter (some (for frying))>."
+                        |> Expect.equal
+                            (Ok <|
+                                Recipe.from
+                                    [ PlainPart "Cook in "
+                                    , IngredientPart <| ingredient "butter" (Just (Description "some (for frying)"))
+                                    , PlainPart "."
+                                    ]
+                            )
             , test "ingredient with amount" <|
                 \_ ->
                     Recipe.parse "Cook an <egg (1)>."

@@ -1,6 +1,11 @@
-module Recipe exposing (Ingredient, ParsingError, Quantity(..), Recipe, RecipePart(..), from, getListName, getQuantity, getText, ingredient, ingredientWithName, ingredients, map, parse)
+--module Recipe exposing (Ingredient, ParsingError, Quantity(..), Recipe, RecipePart(..), from, getListName, getQuantity, getText, ingredient, ingredientWithName, ingredients, map, parse)
 
+
+module Recipe exposing (..)
+
+import Dict exposing (Dict)
 import Parser exposing ((|.), (|=), Parser)
+import Set exposing (Set)
 
 
 type Recipe
@@ -147,7 +152,7 @@ parseIngredient =
                 )
         )
         |. Parser.symbol "<"
-        |= parseInsideText [ '(', '>' ]
+        |= parseInsideTextWithoutParens (Set.fromList [ '(', '>' ])
         |= parseOptional
             (Parser.succeed
                 (\quant listName ->
@@ -155,18 +160,18 @@ parseIngredient =
                 )
                 |. Parser.symbol "("
                 |= parseOptional
-                    (parseQuantity [ ')', ':' ])
+                    (parseQuantity (Set.fromList [ ')', ':' ]))
                 |= parseOptional
                     (Parser.succeed String.trim
                         |. Parser.symbol ":"
-                        |= parseInsideText [ ')' ]
+                        |= parseInsideTextWithParens (Set.fromList [ ')' ])
                     )
                 |. Parser.symbol ")"
             )
         |. Parser.symbol ">"
 
 
-parseQuantity : List Char -> Parser Quantity
+parseQuantity : Set Char -> Parser Quantity
 parseQuantity endChars =
     Parser.oneOf
         [ Parser.succeed
@@ -182,24 +187,24 @@ parseQuantity endChars =
             |= parseOptional
                 (Parser.succeed identity
                     |. Parser.symbol " "
-                    |= parseInsideText endChars
+                    |= parseInsideTextWithParens endChars
                 )
         , parseDescription endChars
         ]
 
 
-parseDescription : List Char -> Parser Quantity
+parseDescription : Set Char -> Parser Quantity
 parseDescription endChars =
     Parser.succeed
         (\inside ->
             String.trim inside |> Description
         )
-        |= parseInsideText endChars
+        |= parseInsideTextWithParens endChars
 
 
-parseInsideText : List Char -> Parser String
-parseInsideText endChars =
-    Parser.getChompedString (Parser.chompWhile (\c -> not (List.member c endChars)))
+parseInsideTextWithoutParens : Set Char -> Parser String
+parseInsideTextWithoutParens endChars =
+    Parser.getChompedString (Parser.chompWhile (\c -> not (Set.member c endChars)))
         |> Parser.andThen
             (\text ->
                 if String.isEmpty text then
@@ -208,6 +213,53 @@ parseInsideText endChars =
                 else
                     Parser.succeed text
             )
+
+
+parseInsideTextWithParens : Set Char -> Parser String
+parseInsideTextWithParens endChars =
+    Parser.getChompedString (chompParens endChars)
+        |> Parser.andThen
+            (\text ->
+                if String.isEmpty text then
+                    Parser.problem "Inside text cannot be empty"
+
+                else
+                    Parser.succeed text
+            )
+
+
+chompParens endChars =
+    Parser.loop 0
+        (\closeCount ->
+            Parser.oneOf
+                [ Parser.symbol "("
+                    |> Parser.map
+                        (\_ ->
+                            Parser.Loop (closeCount + 1)
+                        )
+                , let
+                    newCloseCount =
+                        closeCount - 1
+                  in
+                  Parser.chompIf (\c -> c == ')' && newCloseCount >= 0)
+                    |> Parser.map
+                        (\_ ->
+                            Parser.Loop newCloseCount
+                        )
+                , Parser.succeed (\first second -> second - first)
+                    |= Parser.getOffset
+                    |. Parser.chompWhile (\c -> (not <| Set.member c endChars) && c /= '(' && c /= ')')
+                    |= Parser.getOffset
+                    |> Parser.map
+                        (\difference ->
+                            if difference > 0 then
+                                Parser.Loop closeCount
+
+                            else
+                                Parser.Done ()
+                        )
+                ]
+        )
 
 
 parseOptional : Parser a -> Parser (Maybe a)
