@@ -33,6 +33,20 @@ suite =
                                     , [ PlainPart "Enjoy." ]
                                     ]
                             )
+            , test "replaces single newlines with space" <|
+                \_ ->
+                    Recipe.parse "Order some pizza.\nLay back.\nEnjoy."
+                        |> Expect.equal
+                            (Ok <|
+                                Recipe.from
+                                    [ [ PlainPart "Order some pizza."
+                                      , PlainPart " "
+                                      , PlainPart "Lay back."
+                                      , PlainPart " "
+                                      , PlainPart "Enjoy."
+                                      ]
+                                    ]
+                            )
             , test "unquantified ingredient" <|
                 \_ ->
                     Recipe.parse "Cook an <egg>."

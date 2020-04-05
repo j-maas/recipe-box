@@ -116,6 +116,8 @@ parseRecursion ( next, paragraphs ) =
     Parser.oneOf
         [ Parser.symbol "\n\n"
             |> Parser.map (\_ -> Parser.Loop ( [], List.reverse next :: paragraphs ))
+        , Parser.symbol "\n"
+            |> Parser.map (\_ -> Parser.Loop ( PlainPart " " :: next, paragraphs ))
         , Parser.succeed (\ingred -> Parser.Loop ( ingred :: next, paragraphs ))
             |= parseIngredient
         , Parser.succeed (\plain -> Parser.Loop ( plain :: next, paragraphs ))
