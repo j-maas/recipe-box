@@ -1,6 +1,5 @@
 module Recipe exposing (Ingredient, ParsingError, Quantity(..), Recipe, RecipePart(..), RecipeParts, description, from, getListName, getQuantity, getText, ingredient, ingredientWithName, ingredients, map, parse, title)
 
-import Dict exposing (Dict)
 import Parser exposing ((|.), (|=), Parser)
 import Set exposing (Set)
 

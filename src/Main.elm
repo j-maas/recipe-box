@@ -8,7 +8,6 @@ import Html.Styled as Html exposing (Html)
 import Html.Styled.Attributes as Attributes exposing (css)
 import Html.Styled.Events as Events
 import IngredientMap
-import Json.Encode exposing (Value)
 import Recipe exposing (Recipe)
 
 
