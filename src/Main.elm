@@ -1,45 +1,145 @@
-module Main exposing (main)
+port module Main exposing (main)
 
 import Browser
 import Css exposing (auto, em, num, pct, zero)
 import Css.Global as Global
-import Dict
+import Dict exposing (Dict)
 import Html.Styled as Html exposing (Html)
 import Html.Styled.Attributes as Attributes exposing (css)
 import Html.Styled.Events as Events
 import IngredientMap
+import Json.Encode exposing (Value)
 import Recipe exposing (Recipe)
 
 
-main : Program () Model Msg
+main : Program (List String) Model Msg
 main =
-    Browser.sandbox
+    Browser.element
         { init = init
         , update = update
         , view = view >> Html.toUnstyled
+        , subscriptions = subscriptions
         }
 
 
 type alias Model =
-    { recipe : String
+    { recipes : Dict String ( Recipe.RecipeParts, String )
+    , current : Current
     }
 
 
-init : Model
-init =
-    { recipe = "Chop the <onion (1: large onion)>. Fry the onion in <butter (15 g)>. Boil the <egg (1)> in the <water (0.5 l)>. Season with <salt (a pinch of)>. Wait one minute, then boil the other <egg (1)>."
-    }
+type Current
+    = None
+    | Viewing Recipe
+    | Editing String (Maybe String)
+
+
+init : List String -> ( Model, Cmd Msg )
+init recipes =
+    ( { recipes =
+            List.filterMap
+                (\code ->
+                    Recipe.parse code
+                        |> Result.toMaybe
+                        |> Maybe.map (\recipe -> ( recipe, code ))
+                )
+                recipes
+                |> List.map (\( recipe, code ) -> ( Recipe.title recipe, ( Recipe.description recipe, code ) ))
+                |> Dict.fromList
+      , current = None
+      }
+    , Cmd.none
+    )
 
 
 type Msg
-    = EditedRecipe String
+    = SelectedRecipe String
+    | ToOverview
+    | EditRecipe String
+    | EditedRecipe String
+    | Save
+    | NewRecipe
 
 
-update : Msg -> Model -> Model
+update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
-        EditedRecipe recipe ->
-            { model | recipe = recipe }
+        SelectedRecipe title ->
+            ( { model
+                | current =
+                    Dict.get title model.recipes
+                        |> Maybe.map
+                            (\( parts, _ ) -> Viewing <| Recipe.from title parts)
+                        |> Maybe.withDefault None
+              }
+            , Cmd.none
+            )
+
+        ToOverview ->
+            ( { model | current = None }, Cmd.none )
+
+        EditRecipe title ->
+            let
+                newCurrent =
+                    case Dict.get title model.recipes of
+                        Just ( _, code ) ->
+                            Editing code Nothing
+
+                        Nothing ->
+                            model.current
+            in
+            ( { model | current = newCurrent }, Cmd.none )
+
+        EditedRecipe code ->
+            let
+                newCurrent =
+                    case model.current of
+                        Editing _ _ ->
+                            Editing code Nothing
+
+                        _ ->
+                            model.current
+            in
+            ( { model | current = newCurrent }, Cmd.none )
+
+        Save ->
+            case model.current of
+                Editing code _ ->
+                    case Recipe.parse code of
+                        Ok recipe ->
+                            let
+                                title =
+                                    Recipe.title recipe
+
+                                parts =
+                                    Recipe.description recipe
+                            in
+                            ( { model
+                                | current = Viewing recipe
+                                , recipes =
+                                    Dict.insert title
+                                        ( parts, code )
+                                        model.recipes
+                              }
+                            , save { title = title, code = code }
+                            )
+
+                        Err error ->
+                            ( { model | current = Editing code (Just error) }, Cmd.none )
+
+                _ ->
+                    ( model, Cmd.none )
+
+        NewRecipe ->
+            ( { model | current = Editing "" Nothing }, Cmd.none )
+
+
+port save : { title : String, code : String } -> Cmd msg
+
+
+subscriptions : Model -> Sub Msg
+subscriptions _ =
+    Sub.none
 
 
 view : Model -> Html Msg
@@ -54,6 +154,7 @@ view model =
             , Global.descendants
                 [ Global.typeSelector "ul"
                     [ Css.margin zero
+                    , Css.paddingLeft (em 1.5)
                     ]
                 , Global.typeSelector "p"
                     [ Css.margin zero
@@ -66,22 +167,34 @@ view model =
                 ]
             ]
         ]
-        [ Html.h1 [ css [ headingStyle ] ] [ Html.text "Recipe Box" ]
-        , case Recipe.parse model.recipe of
-            Ok recipe ->
+        [ Html.h1 [ css [ headingStyle, clickableStyle ], Events.onClick ToOverview ] [ Html.text "Recipe Box" ]
+        , case model.current of
+            Viewing recipe ->
                 viewRecipe recipe
 
-            Err error ->
-                Html.text error
-        , Html.textarea
-            [ Events.onInput EditedRecipe
-            , Attributes.value model.recipe
-            , css
-                [ Css.width (pct 100)
-                , Css.maxWidth (pct 100)
-                ]
-            ]
-            []
+            Editing code errors ->
+                viewEditRecipe code errors
+
+            None ->
+                viewRecipeList (Dict.keys model.recipes)
+        ]
+
+
+viewRecipeList : List String -> Html Msg
+viewRecipeList recipeTitles =
+    Html.div []
+        [ Html.button [ Events.onClick NewRecipe ] [ Html.text "New recipe" ]
+        , Html.ul []
+            (List.map
+                (\recipeTitle ->
+                    Html.li
+                        [ css [ clickableStyle ]
+                        , Events.onClick (SelectedRecipe recipeTitle)
+                        ]
+                        [ Html.text recipeTitle ]
+                )
+                recipeTitles
+            )
         ]
 
 
@@ -139,23 +252,60 @@ viewRecipe recipe =
                 recipe
                 |> List.map (\paragraph -> Html.p [] paragraph)
     in
-    Html.article
-        []
-        (Html.h2 [ css [ headingStyle ] ] [ Html.text <| Recipe.title recipe ]
-            :: Html.details []
-                [ Html.summary []
-                    [ Html.h3
-                        [ css
-                            [ headingStyle
-                            , Css.display Css.inlineBlock
-                            ]
-                        ]
-                        [ Html.text "Ingredients" ]
-                    ]
-                , ingredientsView
+    Html.div []
+        [ Html.nav []
+            [ Html.span
+                [ css [ clickableStyle, Css.fontStyle Css.italic ]
+                , Events.onClick ToOverview
                 ]
-            :: Html.h3 [ css [ headingStyle ] ] [ Html.text "Description" ]
-            :: descriptionView
+                [ Html.text "<< Back to list" ]
+            ]
+        , Html.article
+            []
+            (Html.h2 [ css [ headingStyle ] ] [ Html.text <| Recipe.title recipe ]
+                :: Html.div []
+                    [ Html.button [ Events.onClick <| EditRecipe (Recipe.title recipe) ]
+                        [ Html.text "Edit" ]
+                    ]
+                :: Html.details []
+                    [ Html.summary []
+                        [ Html.h3
+                            [ css
+                                [ headingStyle
+                                , Css.display Css.inlineBlock
+                                ]
+                            ]
+                            [ Html.text "Ingredients" ]
+                        ]
+                    , ingredientsView
+                    ]
+                :: Html.h3 [ css [ headingStyle ] ] [ Html.text "Description" ]
+                :: descriptionView
+            )
+        ]
+
+
+viewEditRecipe : String -> Maybe String -> Html Msg
+viewEditRecipe code errors =
+    Html.div []
+        ((case errors of
+            Just error ->
+                [ Html.text error ]
+
+            Nothing ->
+                []
+         )
+            ++ [ Html.textarea
+                    [ Events.onInput EditedRecipe
+                    , Attributes.value code
+                    , css
+                        [ Css.width (pct 100)
+                        , Css.maxWidth (pct 100)
+                        ]
+                    ]
+                    []
+               , Html.button [ Events.onClick Save ] [ Html.text "Save" ]
+               ]
         )
 
 
@@ -167,4 +317,13 @@ headingStyle =
         , Css.margin zero
         , Css.marginTop (em 0.6)
         , Css.marginBottom (em 0.3)
+        ]
+
+
+clickableStyle : Css.Style
+clickableStyle =
+    Css.batch
+        [ Css.hover
+            [ Css.cursor Css.pointer
+            ]
         ]
