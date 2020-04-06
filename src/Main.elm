@@ -234,7 +234,24 @@ subscriptions _ =
 
 view : Model -> Browser.Document Msg
 view model =
-    { title = "Recipe Box"
+    let
+        ( maybeSubtitle, body ) =
+            case model.state of
+                Overview ->
+                    viewRecipeList (Dict.keys model.recipes)
+
+                Recipe recipe ->
+                    viewRecipe recipe
+
+                Edit { code, error } ->
+                    viewEditRecipe code error
+    in
+    { title =
+        "Recipe Box"
+            ++ (maybeSubtitle
+                    |> Maybe.map (\subtitle -> ": " ++ subtitle)
+                    |> Maybe.withDefault ""
+               )
     , body =
         List.map Html.toUnstyled
             [ Html.main_
@@ -246,24 +263,16 @@ view model =
                     , Css.marginTop (em 2)
                     ]
                 ]
-                [ case model.state of
-                    Overview ->
-                        viewRecipeList (Dict.keys model.recipes)
-
-                    Recipe recipe ->
-                        viewRecipe recipe
-
-                    Edit { code, error } ->
-                        viewEditRecipe code error
-                ]
+                [ body ]
             ]
     }
 
 
-viewRecipeList : List String -> Html Msg
+viewRecipeList : List String -> ( Maybe String, Html Msg )
 viewRecipeList recipeTitles =
-    Html.div []
-        [ Html.h1 [ css [ headingStyle ] ] [ Html.text "Recipe Box" ]
+    ( Nothing
+    , Html.div []
+        [ h1 [] [] [ Html.text "Recipe Box" ]
         , Html.div [ css [ Css.margin2 (em 1) zero ] ] [ linkButton "New recipe" NewRoute ]
         , let
             recipeList =
@@ -301,11 +310,15 @@ viewRecipeList recipeTitles =
                 []
                 recipeList
         ]
+    )
 
 
-viewRecipe : Recipe -> Html Msg
+viewRecipe : Recipe -> ( Maybe String, Html Msg )
 viewRecipe recipe =
     let
+        title =
+            Recipe.title recipe
+
         ingredientsView =
             ul []
                 []
@@ -356,9 +369,10 @@ viewRecipe recipe =
                             Html.text (Recipe.getText ingredient)
                 )
                 recipe
-                |> List.map (\paragraph -> Html.p [] paragraph)
+                |> List.map (\paragraph -> p [] [] paragraph)
     in
-    Html.div []
+    ( Just title
+    , Html.div []
         [ Html.nav []
             [ Html.a
                 [ css [ clickableStyle, Css.fontStyle Css.italic, linkUnstyle ]
@@ -387,28 +401,28 @@ viewRecipe recipe =
             ]
         , Html.article
             []
-            (Html.h2 [ css [ headingStyle ] ] [ Html.text <| Recipe.title recipe ]
-                :: Html.details [Attributes.attribute "open" ""]
+            (h1 [] [] [ Html.text <| Recipe.title recipe ]
+                :: Html.details [ Attributes.attribute "open" "" ]
                     [ Html.summary [ css [ clickableStyle ] ]
-                        [ Html.h3
-                            [ css
-                                [ headingStyle
-                                , Css.display Css.inlineBlock
-                                ]
+                        [ h2
+                            [ Css.display Css.inlineBlock
                             ]
+                            []
                             [ Html.text "Ingredients" ]
                         ]
                     , ingredientsView
                     ]
-                :: Html.h3 [ css [ headingStyle ] ] [ Html.text "Description" ]
+                :: h2 [ headingStyle ] [] [ Html.text "Description" ]
                 :: descriptionView
             )
         ]
+    )
 
 
-viewEditRecipe : String -> Maybe String -> Html Msg
+viewEditRecipe : String -> Maybe String -> ( Maybe String, Html Msg )
 viewEditRecipe code errors =
-    Html.div []
+    ( Nothing
+    , Html.div []
         [ case errors of
             Just error ->
                 Html.div [] [ Html.text error ]
@@ -428,6 +442,7 @@ viewEditRecipe code errors =
             []
         , button "Save" Save
         ]
+    )
 
 
 linkButton : String -> Route -> Html Msg
@@ -474,6 +489,36 @@ p styles attributes children =
                             [ Css.marginTop (em 0.6)
                             ]
                         ]
+                     ]
+                        ++ styles
+                    )
+               ]
+        )
+        children
+
+
+h1 : List Css.Style -> List (Html.Attribute Msg) -> List (Html Msg) -> Html Msg
+h1 styles attributes children =
+    Html.h1
+        (attributes
+            ++ [ css
+                    ([ headingStyle
+                     , Css.fontSize (rem 1.5)
+                     ]
+                        ++ styles
+                    )
+               ]
+        )
+        children
+
+
+h2 : List Css.Style -> List (Html.Attribute Msg) -> List (Html Msg) -> Html Msg
+h2 styles attributes children =
+    Html.h2
+        (attributes
+            ++ [ css
+                    ([ headingStyle
+                     , Css.fontSize (rem 1.3)
                      ]
                         ++ styles
                     )
