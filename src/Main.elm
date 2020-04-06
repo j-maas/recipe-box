@@ -388,7 +388,7 @@ viewRecipe recipe =
         , Html.article
             []
             (Html.h2 [ css [ headingStyle ] ] [ Html.text <| Recipe.title recipe ]
-                :: Html.details []
+                :: Html.details [Attributes.attribute "open" ""]
                     [ Html.summary [ css [ clickableStyle ] ]
                         [ Html.h3
                             [ css
