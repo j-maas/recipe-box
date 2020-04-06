@@ -1,7 +1,4 @@
---module Recipe exposing (Ingredient, ParsingError, Quantity(..), Recipe, RecipePart(..), RecipeParts, description, from, getListName, getQuantity, getText, ingredient, ingredientWithName, ingredients, map, parse, title)
-
-
-module Recipe exposing (..)
+module Recipe exposing (Ingredient, ParsingError, Quantity(..), Recipe, RecipePart(..), RecipeParts, description, from, getListName, getQuantity, getText, ingredient, ingredientWithName, ingredients, map, parse, title)
 
 import Parser exposing ((|.), (|=), Parser)
 import Set exposing (Set)

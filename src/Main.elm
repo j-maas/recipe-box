@@ -12,7 +12,6 @@ import IngredientMap exposing (IngredientMap)
 import Recipe exposing (Recipe)
 import Set exposing (Set)
 import Url exposing (Url)
-import Url.Parser as Parser exposing (Parser)
 
 
 main : Program (List String) Model Msg
