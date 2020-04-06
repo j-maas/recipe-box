@@ -25,30 +25,50 @@
             }
         }
         console.info("Loaded " + recipes.length + " recipes.")
+
+        var shoppingListKey = "shoppingList";
+        function getRecipesOnShoppingList() {
+            return JSON.parse(localStorage.getItem(shoppingListKey)) || [];
+        }
+
+        var recipesOnShoppingList = getRecipesOnShoppingList();
+        console.info("Loaded shopping list with " + recipesOnShoppingList.length + " recipes selected.")
+
         var app = Elm.Main.init({
             node: document.getElementById('elm'),
-            flags: recipes
+            flags: {
+                recipes,
+                recipesOnShoppingList
+            }
         });
 
-        function save(title, code) {
+        function saveRecipe(title, code) {
             console.info("Saving recipe with title '" + title + "'.")
             localStorage.setItem(keyFromTitle(title), code);
         }
 
-        function remove(title) {
+        function removeRecipe(title) {
             console.info("Removing recipe with title '" + title + "'.")
             localStorage.removeItem(keyFromTitle(title));
+        }
+
+        function saveShoppingList(recipes) {
+            console.info("Storing shopping list with " + recipes.length + " recipes selected.");
+            localStorage.setItem(shoppingListKey, JSON.stringify(recipes));
         }
 
         function keyFromTitle(title) {
             return "recipe:" + title;
         }
 
-        app.ports.save.subscribe(function (data) {
-            save(data.title, data.code);
+        app.ports.saveRecipe.subscribe(function (data) {
+            saveRecipe(data.title, data.code);
         });
-        app.ports.delete.subscribe(function (title) {
-            remove(title);
+        app.ports.removeRecipe.subscribe(function (title) {
+            removeRecipe(title);
+        });
+        app.ports.saveShoppingList.subscribe(function (recipes) {
+            saveShoppingList(recipes);
         });
     </script>
 </body>
