@@ -1,4 +1,4 @@
 elm-stuff/
 node_modules/
 
-dist/elm.js
+dist/elm.min.js
