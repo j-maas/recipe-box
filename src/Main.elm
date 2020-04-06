@@ -1,7 +1,7 @@
 port module Main exposing (main)
 
 import Browser
-import Css exposing (auto, em, num, pct, zero)
+import Css exposing (auto, em, num, pct, rem, zero)
 import Css.Global as Global
 import Dict exposing (Dict)
 import Html.Styled as Html exposing (Html)
@@ -153,33 +153,22 @@ subscriptions _ =
     Sub.none
 
 
+
+-- View
+
+
 view : Model -> Html Msg
 view model =
     Html.main_
         [ css
-            [ Css.fontFamilies [ "Zilla Slab", "Palatino", "serif" ]
+            [ bodyFontStyle
             , Css.lineHeight (num 1.4)
             , Css.maxWidth (em 48)
             , Css.margin2 zero auto
             , Css.marginTop (em 2)
-            , Global.descendants
-                [ Global.typeSelector "ul"
-                    [ Css.margin zero
-                    , Css.paddingLeft (em 1.5)
-                    ]
-                , Global.typeSelector "p"
-                    [ Css.margin zero
-                    , Global.adjacentSiblings
-                        [ Global.typeSelector "p"
-                            [ Css.marginTop (em 0.6)
-                            ]
-                        ]
-                    ]
-                ]
             ]
         ]
-        [ Html.h1 [ css [ headingStyle, clickableStyle ], Events.onClick ToOverview ] [ Html.text "Recipe Box" ]
-        , case model.current of
+        [ case model.current of
             Viewing recipe ->
                 viewRecipe recipe
 
@@ -194,18 +183,39 @@ view model =
 viewRecipeList : List String -> Html Msg
 viewRecipeList recipeTitles =
     Html.div []
-        [ Html.button [ Events.onClick NewRecipe ] [ Html.text "New recipe" ]
-        , Html.ul []
-            (List.map
-                (\recipeTitle ->
-                    Html.li
-                        [ css [ clickableStyle ]
-                        , Events.onClick (SelectedRecipe recipeTitle)
-                        ]
-                        [ Html.text recipeTitle ]
-                )
-                recipeTitles
-            )
+        [ Html.h1 [ css [ headingStyle ] ] [ Html.text "Recipe Box" ]
+        , Html.div [ css [ Css.margin2 (em 1) zero ] ] [ button "New recipe" NewRecipe ]
+        , let
+            recipeList =
+                List.map
+                    (\recipeTitle ->
+                        Html.li
+                            [ css
+                                [ clickableStyle
+                                , Css.padding (em 0.5)
+                                , Css.hover
+                                    [ Css.backgroundColor (Css.hsla 0 0 0.5 0.1)
+                                    ]
+                                ]
+                            , Events.onClick
+                                (SelectedRecipe recipeTitle)
+                            ]
+                            [ Html.text recipeTitle
+                            ]
+                    )
+                    recipeTitles
+          in
+          if List.isEmpty recipeList then
+            Html.text "You do not have any recipes yet. Create a new recipe!"
+
+          else
+            ul
+                [ Css.property "list-style-type" "\">  \""
+                , Css.listStylePosition Css.inside
+                , Css.paddingLeft zero
+                ]
+                []
+                recipeList
         ]
 
 
@@ -213,7 +223,8 @@ viewRecipe : Recipe -> Html Msg
 viewRecipe recipe =
     let
         ingredientsView =
-            Html.ul []
+            ul []
+                []
                 (IngredientMap.fromDescription (Recipe.description recipe)
                     |> Dict.toList
                     |> List.map
@@ -270,18 +281,31 @@ viewRecipe recipe =
                 , Events.onClick ToOverview
                 ]
                 [ Html.text "<< Back to list" ]
+            , Html.div
+                [ css
+                    [ Css.margin2 (em 1) zero
+                    , Css.displayFlex
+                    , Css.alignItems Css.flexEnd
+                    , Global.children
+                        [ Global.everything
+                            [ Global.adjacentSiblings
+                                [ Global.everything
+                                    [ Css.marginLeft (em 0.5)
+                                    ]
+                                ]
+                            ]
+                        ]
+                    ]
+                ]
+                [ button "Edit" (EditRecipe <| Recipe.title recipe)
+                , button "Delete" (DeleteRecipe <| Recipe.title recipe)
+                ]
             ]
         , Html.article
             []
             (Html.h2 [ css [ headingStyle ] ] [ Html.text <| Recipe.title recipe ]
-                :: Html.div []
-                    [ Html.button [ Events.onClick <| EditRecipe (Recipe.title recipe) ]
-                        [ Html.text "Edit" ]
-                    , Html.button [ Events.onClick <| DeleteRecipe (Recipe.title recipe) ]
-                        [ Html.text "Delete" ]
-                    ]
                 :: Html.details []
-                    [ Html.summary []
+                    [ Html.summary [ css [ clickableStyle ] ]
                         [ Html.h3
                             [ css
                                 [ headingStyle
@@ -314,23 +338,96 @@ viewEditRecipe code errors =
                     , css
                         [ Css.width (pct 100)
                         , Css.maxWidth (pct 100)
+                        , Css.height (em 20)
                         ]
                     ]
                     []
-               , Html.button [ Events.onClick Save ] [ Html.text "Save" ]
+               , button "Save" Save
                ]
         )
+
+
+button : String -> Msg -> Html Msg
+button text msg =
+    Html.button
+        [ Events.onClick msg
+        , css
+            [ borderStyle
+            , clickableStyle
+            , Css.boxShadow4 zero (rem 0.1) (rem 0.1) (Css.hsla 0 0 0 0.3)
+            , Css.hover
+                [ Css.backgroundColor (Css.hsla 0 0 0.5 0.1)
+                , Css.boxShadow4 zero (rem 0.1) (rem 0.2) (Css.hsla 0 0 0 0.3)
+                ]
+            , headingFontStyle
+            ]
+        ]
+        [ Html.text text ]
+
+
+ul : List Css.Style -> List (Html.Attribute Msg) -> List (Html Msg) -> Html Msg
+ul styles attributes children =
+    Html.ul
+        (attributes
+            ++ [ css
+                    ([ Css.margin zero
+                     , Css.paddingLeft (em 1.5)
+                     ]
+                        ++ styles
+                    )
+               ]
+        )
+        children
+
+
+p : List Css.Style -> List (Html.Attribute Msg) -> List (Html Msg) -> Html Msg
+p styles attributes children =
+    Html.p
+        (attributes
+            ++ [ css
+                    ([ Css.margin zero
+                     , Global.adjacentSiblings
+                        [ Global.typeSelector "p"
+                            [ Css.marginTop (em 0.6)
+                            ]
+                        ]
+                     ]
+                        ++ styles
+                    )
+               ]
+        )
+        children
+
+
+borderStyle : Css.Style
+borderStyle =
+    Css.batch
+        [ Css.padding2 (rem 0.5) (rem 1)
+        , Css.borderRadius (rem 0.3)
+        , Css.border3 (rem 0.1) Css.solid (Css.hsl 0 0 0)
+        , Css.backgroundColor Css.transparent
+        ]
 
 
 headingStyle : Css.Style
 headingStyle =
     Css.batch
-        [ Css.fontFamilies [ "Bree Serif", "Georgia", "serif" ]
+        [ headingFontStyle
         , Css.lineHeight (num 1)
         , Css.margin zero
         , Css.marginTop (em 0.6)
         , Css.marginBottom (em 0.3)
         ]
+
+
+headingFontStyle : Css.Style
+headingFontStyle =
+    Css.fontFamilies [ "Bree Serif", "Georgia", "serif" ]
+
+
+bodyFontStyle : Css.Style
+bodyFontStyle =
+    Css.fontFamilies [ "Zilla Slab", "Palatino", "serif" ]
 
 
 clickableStyle : Css.Style
