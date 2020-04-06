@@ -27,3 +27,4 @@ To build everything, run `npm run build` and deploy the `dist` folder.
 - [ ] Highlight occurrences of ingredients on hover.
 - [ ] Allow setting portions.
 - [ ] Embed timers.
+- [ ] Instead of brute deletion, have a bin to protect against accidental deletion.
