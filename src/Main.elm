@@ -2,7 +2,7 @@ port module Main exposing (main, p)
 
 import Browser
 import Browser.Navigation as Navigation
-import Css exposing (auto, em, num, pct, rem, zero)
+import Css exposing (auto, num, pct, rem, zero)
 import Css.Global as Global
 import Dict exposing (Dict)
 import Html.Styled as Html exposing (Html)
@@ -358,9 +358,9 @@ view model =
                 [ css
                     [ bodyFontStyle
                     , Css.lineHeight (num 1.4)
-                    , Css.maxWidth (em 48)
+                    , Css.maxWidth (rem 48)
                     , Css.margin2 zero auto
-                    , Css.marginTop (em 2)
+                    , Css.marginTop (rem 2)
                     ]
                 ]
                 [ body ]
@@ -428,7 +428,7 @@ recipeLinkStyle =
         [ clickableStyle
         , linkUnstyle
         , Css.display Css.inlineBlock
-        , Css.padding (em 0.5)
+        , Css.padding (rem 0.5)
         , onHover
             [ Css.backgroundColor (Css.hsla 0 0 0.5 0.1)
             ]
@@ -552,7 +552,7 @@ viewEditRecipe code errors =
             , css
                 [ Css.width (pct 100)
                 , Css.maxWidth (pct 100)
-                , Css.height (em 20)
+                , Css.height (rem 20)
                 ]
             ]
             []
@@ -594,7 +594,7 @@ viewShoppingList recipes shoppingList state =
                     [ Html.text "Add recipes" ]
                     [ Css.marginLeft (rem 1)
                     , Css.marginTop (rem 1)
-                    , Css.marginBottom(rem 1)
+                    , Css.marginBottom (rem 1)
                     ]
                     open
                     [ contentList
@@ -771,7 +771,7 @@ ul styles attributes children =
     styledNode
         Html.ul
         ([ Css.margin zero
-         , Css.paddingLeft (em 1.5)
+         , Css.paddingLeft (rem 1.5)
          ]
             ++ styles
         )
@@ -786,7 +786,7 @@ p styles attributes children =
         ([ Css.margin zero
          , Global.adjacentSiblings
             [ Global.typeSelector "p"
-                [ Css.marginTop (em 0.6)
+                [ Css.marginTop (rem 0.6)
                 ]
             ]
          ]
@@ -886,8 +886,8 @@ headingStyle =
         [ headingFontStyle
         , Css.lineHeight (num 1)
         , Css.margin zero
-        , Css.marginTop (em 0.6)
-        , Css.marginBottom (em 0.3)
+        , Css.marginTop (rem 0.6)
+        , Css.marginBottom (rem 0.3)
         ]
 
 
