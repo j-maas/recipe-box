@@ -1,4 +1,4 @@
-port module Main exposing (main)
+port module Main exposing (main, p)
 
 import Browser
 import Browser.Navigation as Navigation
@@ -8,8 +8,9 @@ import Dict exposing (Dict)
 import Html.Styled as Html exposing (Html)
 import Html.Styled.Attributes as Attributes exposing (css)
 import Html.Styled.Events as Events
-import IngredientMap
+import IngredientMap exposing (IngredientMap)
 import Recipe exposing (Recipe)
+import Set exposing (Set)
 import Url exposing (Url)
 import Url.Parser as Parser exposing (Parser)
 
@@ -29,7 +30,14 @@ main =
 type alias Model =
     { key : Navigation.Key
     , recipes : RecipeStore
+    , shoppingList : ShoppingList
     , state : State
+    }
+
+
+type alias ShoppingList =
+    { selectedRecipes : Set String
+    , extras : List Recipe.Ingredient
     }
 
 
@@ -37,6 +45,7 @@ type State
     = Overview
     | Recipe Recipe
     | Edit { code : String, error : Maybe String }
+    | Shopping
 
 
 type alias RecipeStore =
@@ -59,6 +68,7 @@ init rawRecipes url key =
     in
     ( { key = key
       , recipes = recipes
+      , shoppingList = { selectedRecipes = Set.empty, extras = [] }
       , state = parseRoute url |> stateFromRoute recipes |> Maybe.withDefault Overview
       }
     , Cmd.none
@@ -69,6 +79,8 @@ type Msg
     = DeleteRecipe String
     | Edited String
     | Save
+    | AddRecipeToShoppingList String
+    | RemoveRecipeFromShoppingList String
     | UrlChanged Url
     | LinkClicked Browser.UrlRequest
 
@@ -128,6 +140,26 @@ update msg model =
                 _ ->
                     ( model, Cmd.none )
 
+        AddRecipeToShoppingList title ->
+            let
+                oldShoppingList =
+                    model.shoppingList
+
+                newShoppingList =
+                    { oldShoppingList | selectedRecipes = Set.insert title oldShoppingList.selectedRecipes }
+            in
+            ( { model | shoppingList = newShoppingList }, Cmd.none )
+
+        RemoveRecipeFromShoppingList title ->
+            let
+                oldShoppingList =
+                    model.shoppingList
+
+                newShoppingList =
+                    { oldShoppingList | selectedRecipes = Set.remove title oldShoppingList.selectedRecipes }
+            in
+            ( { model | shoppingList = newShoppingList }, Cmd.none )
+
         UrlChanged url ->
             ( { model | state = toState (parseRoute url) }, Cmd.none )
 
@@ -145,6 +177,7 @@ type Route
     | RecipeRoute String
     | NewRoute
     | EditRoute String
+    | ShoppingListRoute
 
 
 stateFromRoute : RecipeStore -> Route -> Maybe State
@@ -170,6 +203,9 @@ stateFromRoute recipes route =
                         Edit { code = code, error = Nothing }
                     )
 
+        ShoppingListRoute ->
+            Just Shopping
+
 
 stringFromRoute : Route -> String
 stringFromRoute route =
@@ -186,6 +222,9 @@ stringFromRoute route =
         EditRoute title ->
             "#edit:" ++ Url.percentEncode title
 
+        ShoppingListRoute ->
+            "#shopping"
+
 
 parseRoute : Url -> Route
 parseRoute url =
@@ -197,7 +236,10 @@ parseRoute url =
                         String.slice index (String.length string) string
                             |> Url.percentDecode
                 in
-                if String.startsWith "recipe:" raw then
+                if String.isEmpty raw then
+                    Just OverviewRoute
+
+                else if String.startsWith "recipe:" raw then
                     extractFrom 7 raw
                         |> Maybe.map RecipeRoute
 
@@ -208,8 +250,8 @@ parseRoute url =
                     extractFrom 5 raw
                         |> Maybe.map EditRoute
 
-                else if String.isEmpty raw then
-                    Just OverviewRoute
+                else if raw == "shopping" then
+                    Just ShoppingListRoute
 
                 else
                     Nothing
@@ -238,13 +280,16 @@ view model =
         ( maybeSubtitle, body ) =
             case model.state of
                 Overview ->
-                    viewRecipeList (Dict.keys model.recipes)
+                    viewOverview (Dict.keys model.recipes) model.shoppingList
 
                 Recipe recipe ->
                     viewRecipe recipe
 
                 Edit { code, error } ->
                     viewEditRecipe code error
+
+                Shopping ->
+                    viewShoppingList model.recipes model.shoppingList
     in
     { title =
         "Recipe Box"
@@ -268,49 +313,72 @@ view model =
     }
 
 
-viewRecipeList : List String -> ( Maybe String, Html Msg )
-viewRecipeList recipeTitles =
+viewOverview : List String -> ShoppingList -> ( Maybe String, Html Msg )
+viewOverview recipeTitles shoppingList =
     ( Nothing
     , Html.div []
-        [ h1 [] [] [ Html.text "Recipe Box" ]
-        , Html.div [ css [ Css.margin2 (em 1) zero ] ] [ linkButton "New recipe" NewRoute ]
-        , let
-            recipeList =
-                List.map
-                    (\recipeTitle ->
-                        Html.li []
-                            [ Html.a
-                                [ css
-                                    [ clickableStyle
-                                    , linkUnstyle
-                                    , Css.display Css.inlineBlock
-                                    , Css.padding (em 0.5)
-                                    , Css.hover
-                                        [ Css.backgroundColor (Css.hsla 0 0 0.5 0.1)
-                                        ]
-                                    ]
-                                , Attributes.href
-                                    (RecipeRoute recipeTitle |> stringFromRoute)
-                                ]
-                                [ Html.text recipeTitle
+        ([ h1 [] [] [ Html.text "Recipe Box" ]
+         , Html.nav [] [ navLink [] "Go to shopping list" ShoppingListRoute ]
+         , Html.div [ css [ Css.margin2 (em 1) zero ] ] [ linkButton "New recipe" NewRoute ]
+         ]
+            ++ (if List.isEmpty recipeTitles then
+                    [ Html.text "You do not have any recipes yet. Create a "
+                    , navLink [] "new recipe" NewRoute
+                    , Html.text "!"
+                    ]
+
+                else
+                    [ viewRecipeList recipeTitles shoppingList
+                    ]
+               )
+        )
+    )
+
+
+viewRecipeList : List String -> ShoppingList -> Html Msg
+viewRecipeList recipeTitles shoppingList =
+    ul
+        [ Css.property "list-style-type" "\">  \""
+        , Css.listStylePosition Css.inside
+        , Css.paddingLeft zero
+        ]
+        []
+        (List.map
+            (\recipeTitle ->
+                Html.li
+                    []
+                    [ Html.a
+                        [ css
+                            [ clickableStyle
+                            , linkUnstyle
+                            , Css.display Css.inlineBlock
+                            , Css.padding (em 0.5)
+                            , Css.hover
+                                [ Css.backgroundColor (Css.hsla 0 0 0.5 0.1)
                                 ]
                             ]
-                    )
-                    recipeTitles
-          in
-          if List.isEmpty recipeList then
-            Html.text "You do not have any recipes yet. Create a new recipe!"
+                        , Attributes.href
+                            (RecipeRoute recipeTitle |> stringFromRoute)
+                        ]
+                        [ Html.text recipeTitle
+                        ]
+                    , Html.div [ css [ Css.display Css.inlineBlock, Css.marginInlineStart (rem 1) ] ]
+                        [ if Set.member recipeTitle shoppingList.selectedRecipes then
+                            smallButton [] "Remove from shopping list" <| RemoveRecipeFromShoppingList recipeTitle
 
-          else
-            ul
-                [ Css.property "list-style-type" "\">  \""
-                , Css.listStylePosition Css.inside
-                , Css.paddingLeft zero
-                ]
-                []
-                recipeList
-        ]
-    )
+                          else
+                            smallButton
+                                [ Css.opacity (num 0.1)
+                                , Css.hover [ Css.opacity (num 1) ]
+                                ]
+                                "Add to shopping list"
+                            <|
+                                AddRecipeToShoppingList recipeTitle
+                        ]
+                    ]
+            )
+            recipeTitles
+        )
 
 
 viewRecipe : Recipe -> ( Maybe String, Html Msg )
@@ -320,43 +388,7 @@ viewRecipe recipe =
             Recipe.title recipe
 
         ingredientsView =
-            ul []
-                []
-                (IngredientMap.fromDescription (Recipe.description recipe)
-                    |> Dict.toList
-                    |> List.map
-                        (\( name, quantities ) ->
-                            let
-                                descriptions =
-                                    quantities.descriptions
-
-                                amount =
-                                    Maybe.map (\a -> [ String.fromFloat a ]) quantities.amount
-                                        |> Maybe.withDefault []
-
-                                measures =
-                                    Dict.toList quantities.measures
-                                        |> List.map
-                                            (\( unit, unitAmount ) ->
-                                                String.fromFloat unitAmount ++ " " ++ unit
-                                            )
-
-                                quantitiesTexts =
-                                    measures ++ descriptions ++ amount
-
-                                quantitiesText =
-                                    if List.isEmpty quantitiesTexts then
-                                        ""
-
-                                    else
-                                        " (" ++ String.join " + " quantitiesTexts ++ ")"
-
-                                text =
-                                    name ++ quantitiesText
-                            in
-                            Html.li [] [ Html.text text ]
-                        )
-                )
+            viewIngredientsList (IngredientMap.fromDescription (Recipe.description recipe))
 
         descriptionView =
             Recipe.map
@@ -374,11 +406,7 @@ viewRecipe recipe =
     ( Just title
     , Html.div []
         [ Html.nav []
-            [ Html.a
-                [ css [ clickableStyle, Css.fontStyle Css.italic, linkUnstyle ]
-                , Attributes.href (OverviewRoute |> stringFromRoute)
-                ]
-                [ Html.text "<< Back to list" ]
+            [ backToOverview
             , Html.div
                 [ css
                     [ Css.margin2 (em 1) zero
@@ -396,7 +424,7 @@ viewRecipe recipe =
                     ]
                 ]
                 [ linkButton "Edit" (EditRoute <| Recipe.title recipe)
-                , button "Delete" (DeleteRecipe <| Recipe.title recipe)
+                , button [] "Delete" (DeleteRecipe <| Recipe.title recipe)
                 ]
             ]
         , Html.article
@@ -419,11 +447,52 @@ viewRecipe recipe =
     )
 
 
+viewIngredientsList : IngredientMap -> Html Msg
+viewIngredientsList ingredients =
+    ingredients
+        |> Dict.toList
+        |> List.sortBy (\( name, _ ) -> name)
+        |> List.map
+            (\( name, quantities ) ->
+                let
+                    descriptions =
+                        quantities.descriptions
+
+                    amount =
+                        Maybe.map (\a -> [ String.fromFloat a ]) quantities.amount
+                            |> Maybe.withDefault []
+
+                    measures =
+                        Dict.toList quantities.measures
+                            |> List.map
+                                (\( unit, unitAmount ) ->
+                                    String.fromFloat unitAmount ++ " " ++ unit
+                                )
+
+                    quantitiesTexts =
+                        measures ++ descriptions ++ amount
+
+                    quantitiesText =
+                        if List.isEmpty quantitiesTexts then
+                            ""
+
+                        else
+                            " (" ++ String.join " + " quantitiesTexts ++ ")"
+
+                    text =
+                        name ++ quantitiesText
+                in
+                Html.li [] [ Html.text text ]
+            )
+        |> ul [] []
+
+
 viewEditRecipe : String -> Maybe String -> ( Maybe String, Html Msg )
 viewEditRecipe code errors =
     ( Nothing
     , Html.div []
-        [ case errors of
+        [ Html.nav [] [ backToOverview ]
+        , case errors of
             Just error ->
                 Html.div [] [ Html.text error ]
 
@@ -440,90 +509,186 @@ viewEditRecipe code errors =
                 ]
             ]
             []
-        , button "Save" Save
+        , button [] "Save" Save
         ]
+    )
+
+
+viewShoppingList : RecipeStore -> ShoppingList -> ( Maybe String, Html Msg )
+viewShoppingList recipes shoppingList =
+    ( Nothing
+    , let
+        selectedRecipesView =
+            if Set.isEmpty shoppingList.selectedRecipes then
+                []
+
+            else
+                [ Html.details
+                    [ css
+                        [ Css.margin2 (rem 1) zero
+                        ]
+                    ]
+                    [ Html.summary [] [ Html.text "Recipes selected" ]
+                    , Html.div
+                        [ css [ Css.marginLeft (rem 0.5) ]
+                        ]
+                        [ viewRecipeList (shoppingList.selectedRecipes |> Set.toList) shoppingList ]
+                    ]
+                ]
+
+        allIngredients =
+            (shoppingList.selectedRecipes
+                |> Set.toList
+                |> List.filterMap (\title -> Dict.get title recipes)
+                |> List.concatMap (\( parts, _ ) -> Recipe.ingredients parts)
+            )
+                ++ shoppingList.extras
+
+        ingredientsMap =
+            IngredientMap.fromIngredients allIngredients
+
+        ingredientsListView =
+            if List.isEmpty allIngredients then
+                [ Html.text "Your shopping list is empty. Select some recipes from the "
+                , navLink [] "recipe list" OverviewRoute
+                , Html.text "."
+                ]
+
+            else
+                [ viewIngredientsList ingredientsMap
+                ]
+      in
+      Html.div []
+        ([ Html.nav [] [ backToOverview ]
+         , h1 [] [] [ Html.text "Shopping List" ]
+         ]
+            ++ selectedRecipesView
+            ++ ingredientsListView
+        )
     )
 
 
 linkButton : String -> Route -> Html Msg
 linkButton text route =
-    Html.a
+    styledNode
+        Html.a
+        [ buttonStyle ]
         [ Attributes.href (stringFromRoute route)
-        , css [ buttonStyle ]
         ]
         [ Html.text text ]
 
 
-button : String -> Msg -> Html Msg
-button text msg =
-    Html.button
+button : List Css.Style -> String -> Msg -> Html Msg
+button styles text msg =
+    buttonWith
+        (buttonStyle :: styles)
         [ Events.onClick msg
-        , css [ buttonStyle ]
         ]
         [ Html.text text ]
+
+
+smallButton : List Css.Style -> String -> Msg -> Html Msg
+smallButton styles text msg =
+    buttonWith
+        (smallButtonStyle :: styles)
+        [ Events.onClick msg
+        ]
+        [ Html.text text ]
+
+
+buttonWith : List Css.Style -> List (Html.Attribute Msg) -> List (Html Msg) -> Html Msg
+buttonWith styles attributes children =
+    styledNode
+        Html.button
+        styles
+        attributes
+        children
+
+
+navLink : List Css.Style -> String -> Route -> Html Msg
+navLink styles text route =
+    styledNode
+        Html.a
+        ([ clickableStyle
+         , Css.fontStyle Css.italic
+         , linkUnstyle
+         , Css.textDecoration Css.underline
+         , Css.before [ Css.property "content" "\">> \"" ]
+         ]
+            ++ styles
+        )
+        [ Attributes.href (route |> stringFromRoute)
+        ]
+        [ Html.text text ]
+
+
+backToOverview : Html Msg
+backToOverview =
+    navLink [ Css.before [ Css.property "content" "\"<< \"" ] ]
+        "Go back to recipe list"
+        OverviewRoute
 
 
 ul : List Css.Style -> List (Html.Attribute Msg) -> List (Html Msg) -> Html Msg
 ul styles attributes children =
-    Html.ul
-        (attributes
-            ++ [ css
-                    ([ Css.margin zero
-                     , Css.paddingLeft (em 1.5)
-                     ]
-                        ++ styles
-                    )
-               ]
+    styledNode
+        Html.ul
+        ([ Css.margin zero
+         , Css.paddingLeft (em 1.5)
+         ]
+            ++ styles
         )
+        attributes
         children
 
 
 p : List Css.Style -> List (Html.Attribute Msg) -> List (Html Msg) -> Html Msg
 p styles attributes children =
-    Html.p
-        (attributes
-            ++ [ css
-                    ([ Css.margin zero
-                     , Global.adjacentSiblings
-                        [ Global.typeSelector "p"
-                            [ Css.marginTop (em 0.6)
-                            ]
-                        ]
-                     ]
-                        ++ styles
-                    )
-               ]
+    styledNode
+        Html.p
+        ([ Css.margin zero
+         , Global.adjacentSiblings
+            [ Global.typeSelector "p"
+                [ Css.marginTop (em 0.6)
+                ]
+            ]
+         ]
+            ++ styles
         )
+        attributes
         children
 
 
 h1 : List Css.Style -> List (Html.Attribute Msg) -> List (Html Msg) -> Html Msg
 h1 styles attributes children =
-    Html.h1
-        (attributes
-            ++ [ css
-                    ([ headingStyle
-                     , Css.fontSize (rem 1.5)
-                     ]
-                        ++ styles
-                    )
-               ]
+    styledNode
+        Html.h1
+        ([ headingStyle
+         , Css.fontSize (rem 1.5)
+         ]
+            ++ styles
         )
+        attributes
         children
 
 
 h2 : List Css.Style -> List (Html.Attribute Msg) -> List (Html Msg) -> Html Msg
 h2 styles attributes children =
-    Html.h2
-        (attributes
-            ++ [ css
-                    ([ headingStyle
-                     , Css.fontSize (rem 1.3)
-                     ]
-                        ++ styles
-                    )
-               ]
+    styledNode
+        Html.h2
+        ([ headingStyle
+         , Css.fontSize (rem 1.3)
+         ]
+            ++ styles
         )
+        attributes
+        children
+
+
+styledNode : (List (Html.Attribute Msg) -> List (Html Msg) -> Html Msg) -> List Css.Style -> List (Html.Attribute Msg) -> List (Html Msg) -> Html Msg
+styledNode tag styles attributes children =
+    tag
+        (attributes ++ [ css styles ])
         children
 
 
@@ -540,6 +705,15 @@ buttonStyle =
         , headingFontStyle
         , Css.fontSize (rem 1)
         , linkUnstyle
+        ]
+
+
+smallButtonStyle : Css.Style
+smallButtonStyle =
+    Css.batch
+        [ buttonStyle
+        , Css.padding2 (rem 0.2) (rem 0.3)
+        , bodyFontStyle
         ]
 
 

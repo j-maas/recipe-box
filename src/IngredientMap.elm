@@ -1,7 +1,7 @@
-module IngredientMap exposing (IngredientMap, fromDescription, fromList)
+module IngredientMap exposing (IngredientMap, fromDescription, fromIngredients, fromList)
 
 import Dict exposing (Dict)
-import Recipe exposing (Quantity)
+import Recipe exposing (Ingredient, Quantity)
 
 
 type alias IngredientMap =
@@ -51,14 +51,20 @@ fromList ingredients =
         ingredients
 
 
-fromDescription : Recipe.RecipeParts -> IngredientMap
-fromDescription parts =
-    Recipe.ingredients parts
+fromIngredients : List Ingredient -> IngredientMap
+fromIngredients ingredients =
+    ingredients
         |> List.map
             (\ingredient ->
                 ( Recipe.getListName ingredient, Recipe.getQuantity ingredient )
             )
         |> fromList
+
+
+fromDescription : Recipe.RecipeParts -> IngredientMap
+fromDescription parts =
+    Recipe.ingredients parts
+        |> fromIngredients
 
 
 addQuantity : Quantity -> Quantities -> Quantities
