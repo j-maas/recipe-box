@@ -28,9 +28,14 @@ main =
 
 type alias Model =
     { key : Navigation.Key
-    , recipes : RecipeStore
-    , shoppingList : ShoppingList
     , state : State
+    , screen : Screen
+    }
+
+
+type alias State =
+    { recipes : RecipeStore
+    , shoppingList : ShoppingList
     }
 
 
@@ -40,11 +45,15 @@ type alias ShoppingList =
     }
 
 
-type State
+type Screen
     = Overview
     | Recipe Recipe
     | Edit { code : String, error : Maybe String }
-    | Shopping
+    | Shopping ShoppingState
+
+
+type alias ShoppingState =
+    { openSelection : Bool }
 
 
 type alias RecipeStore =
@@ -64,11 +73,15 @@ init rawRecipes url key =
                 rawRecipes
                 |> List.map (\( recipe, code ) -> ( Recipe.title recipe, ( Recipe.description recipe, code ) ))
                 |> Dict.fromList
+
+        state =
+            { recipes = recipes
+            , shoppingList = { selectedRecipes = Set.empty, extras = [] }
+            }
     in
     ( { key = key
-      , recipes = recipes
-      , shoppingList = { selectedRecipes = Set.empty, extras = [] }
-      , state = parseRoute url |> stateFromRoute recipes |> Maybe.withDefault Overview
+      , state = state
+      , screen = parseRoute url |> screenFromRoute state |> Maybe.withDefault Overview
       }
     , Cmd.none
     )
@@ -87,32 +100,38 @@ type Msg
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     let
-        toState route =
-            stateFromRoute model.recipes route |> Maybe.withDefault model.state
+        updateState func m =
+            { m | state = func m.state }
+
+        toScreen route =
+            screenFromRoute model.state route |> Maybe.withDefault model.screen
     in
     case msg of
         DeleteRecipe title ->
             ( { model
-                | recipes = Dict.remove title model.recipes
-                , state = toState OverviewRoute
+                | screen = toScreen OverviewRoute
               }
+                |> updateState
+                    (\state ->
+                        { state | recipes = Dict.remove title state.recipes }
+                    )
             , delete title
             )
 
         Edited code ->
             let
-                newState =
-                    case model.state of
+                newScreen =
+                    case model.screen of
                         Edit _ ->
                             Edit { code = code, error = Nothing }
 
                         _ ->
-                            model.state
+                            model.screen
             in
-            ( { model | state = newState }, Cmd.none )
+            ( { model | screen = newScreen }, Cmd.none )
 
         Save ->
-            case model.state of
+            case model.screen of
                 Edit { code } ->
                     case Recipe.parse code of
                         Ok recipe ->
@@ -123,44 +142,74 @@ update msg model =
                                 parts =
                                     Recipe.description recipe
                             in
-                            ( { model
-                                | state = Recipe recipe
-                                , recipes =
-                                    Dict.insert title
-                                        ( parts, code )
-                                        model.recipes
-                              }
+                            ( { model | screen = Recipe recipe }
+                                |> updateState
+                                    (\state ->
+                                        { state
+                                            | recipes =
+                                                Dict.insert title
+                                                    ( parts, code )
+                                                    state.recipes
+                                        }
+                                    )
                             , save { title = title, code = code }
                             )
 
                         Err error ->
-                            ( { model | state = Edit { code = code, error = Just error } }, Cmd.none )
+                            ( { model | screen = Edit { code = code, error = Just error } }, Cmd.none )
 
                 _ ->
                     ( model, Cmd.none )
 
         AddRecipeToShoppingList title ->
-            let
-                oldShoppingList =
-                    model.shoppingList
+            ( model
+                |> updateState
+                    (\state ->
+                        let
+                            oldShoppingList =
+                                state.shoppingList
 
-                newShoppingList =
-                    { oldShoppingList | selectedRecipes = Set.insert title oldShoppingList.selectedRecipes }
-            in
-            ( { model | shoppingList = newShoppingList }, Cmd.none )
+                            newShoppingList =
+                                { oldShoppingList | selectedRecipes = Set.insert title oldShoppingList.selectedRecipes }
+                        in
+                        { state | shoppingList = newShoppingList }
+                    )
+            , Cmd.none
+            )
 
         RemoveRecipeFromShoppingList title ->
             let
                 oldShoppingList =
-                    model.shoppingList
+                    model.state.shoppingList
 
                 newShoppingList =
                     { oldShoppingList | selectedRecipes = Set.remove title oldShoppingList.selectedRecipes }
+
+                newScreen =
+                    case model.screen of
+                        Shopping shoppingState ->
+                            Shopping
+                                { shoppingState
+                                    | openSelection =
+                                        -- Because Elm does not detect closing of details due to its virtual dom,
+                                        -- this will not have the desired effect for now.
+                                        Set.isEmpty newShoppingList.selectedRecipes
+                                            || shoppingState.openSelection
+                                }
+
+                        _ ->
+                            model.screen
             in
-            ( { model | shoppingList = newShoppingList }, Cmd.none )
+            ( { model | screen = newScreen }
+                |> updateState
+                    (\state ->
+                        { state | shoppingList = newShoppingList }
+                    )
+            , Cmd.none
+            )
 
         UrlChanged url ->
-            ( { model | state = toState (parseRoute url) }, Cmd.none )
+            ( { model | screen = toScreen (parseRoute url) }, Cmd.none )
 
         LinkClicked request ->
             case request of
@@ -179,14 +228,14 @@ type Route
     | ShoppingListRoute
 
 
-stateFromRoute : RecipeStore -> Route -> Maybe State
-stateFromRoute recipes route =
+screenFromRoute : State -> Route -> Maybe Screen
+screenFromRoute state route =
     case route of
         OverviewRoute ->
             Just Overview
 
         RecipeRoute title ->
-            Dict.get title recipes
+            Dict.get title state.recipes
                 |> Maybe.map
                     (\( recipe, _ ) ->
                         Recipe (Recipe.from title recipe)
@@ -196,14 +245,18 @@ stateFromRoute recipes route =
             Just <| Edit { code = "", error = Nothing }
 
         EditRoute title ->
-            Dict.get title recipes
+            Dict.get title state.recipes
                 |> Maybe.map
                     (\( _, code ) ->
                         Edit { code = code, error = Nothing }
                     )
 
         ShoppingListRoute ->
-            Just Shopping
+            let
+                openSelection =
+                    Set.isEmpty state.shoppingList.selectedRecipes
+            in
+            Just <| Shopping { openSelection = openSelection }
 
 
 stringFromRoute : Route -> String
@@ -276,10 +329,13 @@ subscriptions _ =
 view : Model -> Browser.Document Msg
 view model =
     let
+        state =
+            model.state
+
         ( maybeSubtitle, body ) =
-            case model.state of
+            case model.screen of
                 Overview ->
-                    viewOverview (Dict.keys model.recipes) model.shoppingList
+                    viewOverview (Dict.keys state.recipes)
 
                 Recipe recipe ->
                     viewRecipe recipe
@@ -287,8 +343,8 @@ view model =
                 Edit { code, error } ->
                     viewEditRecipe code error
 
-                Shopping ->
-                    viewShoppingList model.recipes model.shoppingList
+                Shopping shoppingState ->
+                    viewShoppingList state.recipes state.shoppingList shoppingState
     in
     { title =
         "Recipe Box"
@@ -312,72 +368,71 @@ view model =
     }
 
 
-viewOverview : List String -> ShoppingList -> ( Maybe String, Html Msg )
-viewOverview recipeTitles shoppingList =
+viewOverview : List String -> ( Maybe String, Html Msg )
+viewOverview recipeTitles =
     ( Nothing
     , Html.div []
-        ([ h1 [] [] [ Html.text "Recipe Box" ]
-         , Html.nav [] [ navLink [] "Go to shopping list" ShoppingListRoute ]
-         , Html.div [ css [ Css.margin2 (em 1) zero ] ] [ linkButton "New recipe" NewRoute ]
-         ]
-            ++ (if List.isEmpty recipeTitles then
-                    [ Html.text "You do not have any recipes yet. Create a "
-                    , navLink [] "new recipe" NewRoute
-                    , Html.text "!"
-                    ]
-
-                else
-                    [ viewRecipeList recipeTitles shoppingList
-                    ]
-               )
-        )
+        [ h1 [] [] [ Html.text "Recipe Box" ]
+        , Html.nav [] [ navLink [] "Go to shopping list" ShoppingListRoute ]
+        , Html.div [ css [ Css.margin2 (em 1) zero ] ] [ linkButton "New recipe" NewRoute ]
+        , viewRecipeList recipeTitles
+        ]
     )
 
 
-viewRecipeList : List String -> ShoppingList -> Html Msg
-viewRecipeList recipeTitles shoppingList =
-    ul
+viewRecipeList : List String -> Html Msg
+viewRecipeList recipeTitles =
+    contentList
+        (Html.div [] noRecipes)
+        (ul
+            [ recipeListStyle ]
+            []
+        )
+        (\title ->
+            Html.li [] [ viewRecipeLink title ]
+        )
+        recipeTitles
+
+
+noRecipes : List (Html Msg)
+noRecipes =
+    [ Html.text "You do not have any recipes yet. Create a "
+    , navLink [] "new recipe" NewRoute
+    , Html.text "!"
+    ]
+
+
+recipeListStyle : Css.Style
+recipeListStyle =
+    Css.batch
         [ Css.property "list-style-type" "\">  \""
         , Css.listStylePosition Css.inside
         , Css.paddingLeft zero
         ]
-        []
-        (List.map
-            (\recipeTitle ->
-                Html.li
-                    []
-                    [ Html.a
-                        [ css
-                            [ clickableStyle
-                            , linkUnstyle
-                            , Css.display Css.inlineBlock
-                            , Css.padding (em 0.5)
-                            , Css.hover
-                                [ Css.backgroundColor (Css.hsla 0 0 0.5 0.1)
-                                ]
-                            ]
-                        , Attributes.href
-                            (RecipeRoute recipeTitle |> stringFromRoute)
-                        ]
-                        [ Html.text recipeTitle
-                        ]
-                    , Html.div [ css [ Css.display Css.inlineBlock, Css.marginInlineStart (rem 1) ] ]
-                        [ if Set.member recipeTitle shoppingList.selectedRecipes then
-                            smallButton [] "Remove from shopping list" <| RemoveRecipeFromShoppingList recipeTitle
 
-                          else
-                            smallButton
-                                [ Css.opacity (num 0.1)
-                                , Css.hover [ Css.opacity (num 1) ]
-                                ]
-                                "Add to shopping list"
-                            <|
-                                AddRecipeToShoppingList recipeTitle
-                        ]
-                    ]
-            )
-            recipeTitles
-        )
+
+viewRecipeLink : String -> Html Msg
+viewRecipeLink title =
+    Html.a
+        [ css [ recipeLinkStyle ]
+        , Attributes.href
+            (RecipeRoute title |> stringFromRoute)
+        ]
+        [ Html.text title
+        ]
+
+
+recipeLinkStyle : Css.Style
+recipeLinkStyle =
+    Css.batch
+        [ clickableStyle
+        , linkUnstyle
+        , Css.display Css.inlineBlock
+        , Css.padding (em 0.5)
+        , onHover
+            [ Css.backgroundColor (Css.hsla 0 0 0.5 0.1)
+            ]
+        ]
 
 
 viewRecipe : Recipe -> ( Maybe String, Html Msg )
@@ -429,15 +484,18 @@ viewRecipe recipe =
         , Html.article
             []
             (h1 [] [] [ Html.text <| Recipe.title recipe ]
-                :: Html.details [ Attributes.attribute "open" "" ]
-                    [ Html.summary [ css [ clickableStyle ] ]
-                        [ h2
-                            [ Css.display Css.inlineBlock
-                            ]
-                            []
-                            [ Html.text "Ingredients" ]
+                :: details
+                    []
+                    [ h2
+                        [ Css.display Css.inlineBlock
+                        , Css.marginTop zero
                         ]
-                    , ingredientsView
+                        []
+                        [ Html.text "Ingredients" ]
+                    ]
+                    [ Css.marginTop (rem 1) ]
+                    [ Attributes.attribute "open" "" ]
+                    [ ingredientsView
                     ]
                 :: h2 [ headingStyle ] [] [ Html.text "Description" ]
                 :: descriptionView
@@ -447,43 +505,48 @@ viewRecipe recipe =
 
 
 viewIngredientsList : IngredientMap -> Html Msg
-viewIngredientsList ingredients =
-    ingredients
-        |> Dict.toList
-        |> List.sortBy (\( name, _ ) -> name)
-        |> List.map
-            (\( name, quantities ) ->
-                let
-                    descriptions =
-                        quantities.descriptions
+viewIngredientsList ingredientsMap =
+    let
+        ingredients =
+            ingredientsMap
+                |> Dict.toList
+                |> List.sortBy (\( name, _ ) -> name)
+    in
+    contentList
+        (Html.text "No ingredients required.")
+        (ul [] [])
+        (\( name, quantities ) ->
+            let
+                descriptions =
+                    quantities.descriptions
 
-                    amount =
-                        Maybe.map (\a -> [ String.fromFloat a ]) quantities.amount
-                            |> Maybe.withDefault []
+                amount =
+                    Maybe.map (\a -> [ String.fromFloat a ]) quantities.amount
+                        |> Maybe.withDefault []
 
-                    measures =
-                        Dict.toList quantities.measures
-                            |> List.map
-                                (\( unit, unitAmount ) ->
-                                    String.fromFloat unitAmount ++ " " ++ unit
-                                )
+                measures =
+                    Dict.toList quantities.measures
+                        |> List.map
+                            (\( unit, unitAmount ) ->
+                                String.fromFloat unitAmount ++ " " ++ unit
+                            )
 
-                    quantitiesTexts =
-                        measures ++ descriptions ++ amount
+                quantitiesTexts =
+                    measures ++ descriptions ++ amount
 
-                    quantitiesText =
-                        if List.isEmpty quantitiesTexts then
-                            ""
+                quantitiesText =
+                    if List.isEmpty quantitiesTexts then
+                        ""
 
-                        else
-                            " (" ++ String.join " + " quantitiesTexts ++ ")"
+                    else
+                        " (" ++ String.join " + " quantitiesTexts ++ ")"
 
-                    text =
-                        name ++ quantitiesText
-                in
-                Html.li [] [ Html.text text ]
-            )
-        |> ul [] []
+                text =
+                    name ++ quantitiesText
+            in
+            Html.li [] [ Html.text text ]
+        )
+        ingredients
 
 
 viewEditRecipe : String -> Maybe String -> ( Maybe String, Html Msg )
@@ -513,27 +576,70 @@ viewEditRecipe code errors =
     )
 
 
-viewShoppingList : RecipeStore -> ShoppingList -> ( Maybe String, Html Msg )
-viewShoppingList recipes shoppingList =
+viewShoppingList : RecipeStore -> ShoppingList -> ShoppingState -> ( Maybe String, Html Msg )
+viewShoppingList recipes shoppingList state =
     ( Nothing
     , let
         selectedRecipesView =
-            if Set.isEmpty shoppingList.selectedRecipes then
-                []
+            [ let
+                open =
+                    if state.openSelection then
+                        [ Attributes.attribute "open" "" ]
 
-            else
-                [ Html.details
-                    [ css
-                        [ Css.margin2 (rem 1) zero
-                        ]
+                    else
+                        []
+
+                selectedRecipes =
+                    shoppingList.selectedRecipes |> Set.toList
+
+                unselectedRecipes =
+                    recipes |> Dict.keys |> List.filter (\title -> not <| Set.member title shoppingList.selectedRecipes)
+
+                summaryStyles =
+                    [ headingFontStyle ]
+              in
+              details
+                summaryStyles
+                [ Html.text "Selected recipes" ]
+                [ Css.margin2 (rem 1) zero
+                ]
+                open
+                [ contentList
+                    (Html.text "No recipes selected.")
+                    (ul [ recipeListStyle ] [])
+                    (\title ->
+                        Html.li []
+                            [ viewRecipeLink title
+                            , smallButton [] "Remove" (RemoveRecipeFromShoppingList title)
+                            ]
+                    )
+                    selectedRecipes
+                , details
+                    summaryStyles
+                    [ Html.text "Unselected recipes" ]
+                    [ Css.marginLeft (rem 1)
+                    , Css.marginTop (rem 1)
                     ]
-                    [ Html.summary [] [ Html.text "Recipes selected" ]
-                    , Html.div
-                        [ css [ Css.marginLeft (rem 0.5) ]
-                        ]
-                        [ viewRecipeList (shoppingList.selectedRecipes |> Set.toList) shoppingList ]
+                    open
+                    [ contentList
+                        (Html.div [] <|
+                            if Dict.isEmpty recipes then
+                                noRecipes
+
+                            else
+                                [ Html.text "You have selected all recipes." ]
+                        )
+                        (ul [ recipeListStyle ] [])
+                        (\title ->
+                            Html.li []
+                                [ viewRecipeLink title
+                                , smallButton [] "Add" (AddRecipeToShoppingList title)
+                                ]
+                        )
+                        unselectedRecipes
                     ]
                 ]
+            ]
 
         allIngredients =
             (shoppingList.selectedRecipes
@@ -548,9 +654,7 @@ viewShoppingList recipes shoppingList =
 
         ingredientsListView =
             if List.isEmpty allIngredients then
-                [ Html.text "Your shopping list is empty. Select some recipes from the "
-                , navLink [] "recipe list" OverviewRoute
-                , Html.text "."
+                [ Html.text "Your shopping list is empty. Add some recipes from the list."
                 ]
 
             else
@@ -595,6 +699,14 @@ smallButton styles text msg =
         [ Html.text text ]
 
 
+onHover : List Css.Style -> Css.Style
+onHover styles =
+    Css.batch
+        [ Css.hover styles
+        , Css.focus styles
+        ]
+
+
 buttonWith : List Css.Style -> List (Html.Attribute Msg) -> List (Html Msg) -> Html Msg
 buttonWith styles attributes children =
     styledNode
@@ -626,6 +738,26 @@ backToOverview =
     navLink [ Css.before [ Css.property "content" "\"<< \"" ] ]
         "Go back to recipe list"
         OverviewRoute
+
+
+contentList : Html Msg -> (List (Html Msg) -> Html Msg) -> (a -> Html Msg) -> List a -> Html Msg
+contentList empty list itemFunc items =
+    if List.isEmpty items then
+        Html.span [ css [ Css.fontStyle Css.italic ] ] [ empty ]
+
+    else
+        list (List.map itemFunc items)
+
+
+details : List Css.Style -> List (Html Msg) -> List Css.Style -> List (Html.Attribute Msg) -> List (Html Msg) -> Html Msg
+details summaryStyles summary styles attributes children =
+    styledNode
+        Html.details
+        (detailsStyle
+            :: styles
+        )
+        attributes
+        (Html.summary [ css <| [ clickableStyle ] ++ summaryStyles ] summary :: children)
 
 
 ul : List Css.Style -> List (Html.Attribute Msg) -> List (Html Msg) -> Html Msg
@@ -697,13 +829,21 @@ buttonStyle =
         [ borderStyle
         , clickableStyle
         , Css.boxShadow4 zero (rem 0.1) (rem 0.1) (Css.hsla 0 0 0 0.3)
-        , Css.hover
+        , onHover
             [ Css.backgroundColor (Css.hsla 0 0 0.5 0.1)
             , Css.boxShadow4 zero (rem 0.1) (rem 0.2) (Css.hsla 0 0 0 0.3)
             ]
         , headingFontStyle
         , Css.fontSize (rem 1)
         , linkUnstyle
+        ]
+
+
+buttonUnstyle : Css.Style
+buttonUnstyle =
+    Css.batch
+        [ Css.backgroundColor Css.transparent
+        , Css.border zero
         ]
 
 
@@ -755,10 +895,18 @@ bodyFontStyle =
     Css.fontFamilies [ "Zilla Slab", "Palatino", "serif" ]
 
 
+detailsStyle : Css.Style
+detailsStyle =
+    Css.batch
+        [ Css.borderLeft3 (rem 0.1) Css.solid (Css.hsl 0 0 0)
+        , Css.paddingLeft (rem 0.5)
+        ]
+
+
 clickableStyle : Css.Style
 clickableStyle =
     Css.batch
-        [ Css.hover
+        [ onHover
             [ Css.cursor Css.pointer
             ]
         ]
