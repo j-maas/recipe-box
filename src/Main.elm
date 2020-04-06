@@ -1,6 +1,7 @@
 port module Main exposing (main)
 
 import Browser
+import Browser.Navigation as Navigation
 import Css exposing (auto, em, num, pct, rem, zero)
 import Css.Global as Global
 import Dict exposing (Dict)
@@ -9,110 +10,100 @@ import Html.Styled.Attributes as Attributes exposing (css)
 import Html.Styled.Events as Events
 import IngredientMap
 import Recipe exposing (Recipe)
+import Url exposing (Url)
+import Url.Parser as Parser exposing (Parser)
 
 
 main : Program (List String) Model Msg
 main =
-    Browser.element
+    Browser.application
         { init = init
         , update = update
-        , view = view >> Html.toUnstyled
+        , view = view
         , subscriptions = subscriptions
+        , onUrlRequest = LinkClicked
+        , onUrlChange = UrlChanged
         }
 
 
 type alias Model =
-    { recipes : Dict String ( Recipe.RecipeParts, String )
-    , current : Current
+    { key : Navigation.Key
+    , recipes : RecipeStore
+    , state : State
     }
 
 
-type Current
-    = None
-    | Viewing Recipe
-    | Editing String (Maybe String)
+type State
+    = Overview
+    | Recipe Recipe
+    | Edit { code : String, error : Maybe String }
 
 
-init : List String -> ( Model, Cmd Msg )
-init recipes =
-    ( { recipes =
+type alias RecipeStore =
+    Dict String ( Recipe.RecipeParts, String )
+
+
+init : List String -> Url -> Navigation.Key -> ( Model, Cmd Msg )
+init rawRecipes url key =
+    let
+        recipes =
             List.filterMap
                 (\code ->
                     Recipe.parse code
                         |> Result.toMaybe
                         |> Maybe.map (\recipe -> ( recipe, code ))
                 )
-                recipes
+                rawRecipes
                 |> List.map (\( recipe, code ) -> ( Recipe.title recipe, ( Recipe.description recipe, code ) ))
                 |> Dict.fromList
-      , current = None
+    in
+    ( { key = key
+      , recipes = recipes
+      , state = parseRoute url |> stateFromRoute recipes |> Maybe.withDefault Overview
       }
     , Cmd.none
     )
 
 
 type Msg
-    = SelectedRecipe String
-    | ToOverview
-    | EditRecipe String
-    | DeleteRecipe String
+    = DeleteRecipe String
     | Edited String
     | Save
     | NewRecipe
+    | UrlChanged Url
+    | LinkClicked Browser.UrlRequest
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
+    let
+        toState route =
+            stateFromRoute model.recipes route |> Maybe.withDefault model.state
+    in
     case msg of
-        SelectedRecipe title ->
-            ( { model
-                | current =
-                    Dict.get title model.recipes
-                        |> Maybe.map
-                            (\( parts, _ ) -> Viewing <| Recipe.from title parts)
-                        |> Maybe.withDefault None
-              }
-            , Cmd.none
-            )
-
-        ToOverview ->
-            ( { model | current = None }, Cmd.none )
-
-        EditRecipe title ->
-            let
-                newCurrent =
-                    case Dict.get title model.recipes of
-                        Just ( _, code ) ->
-                            Editing code Nothing
-
-                        Nothing ->
-                            model.current
-            in
-            ( { model | current = newCurrent }, Cmd.none )
-
         DeleteRecipe title ->
             ( { model
                 | recipes = Dict.remove title model.recipes
-                , current = None
+                , state = toState OverviewRoute
               }
             , delete title
             )
 
         Edited code ->
             let
-                newCurrent =
-                    case model.current of
-                        Editing _ _ ->
-                            Editing code Nothing
+                newState =
+                    case model.state of
+                        Edit _ ->
+                            Edit { code = code, error = Nothing }
 
                         _ ->
-                            model.current
+                            model.state
             in
-            ( { model | current = newCurrent }, Cmd.none )
+            ( { model | state = newState }, Cmd.none )
 
         Save ->
-            case model.current of
-                Editing code _ ->
+            case model.state of
+                Edit { code } ->
                     case Recipe.parse code of
                         Ok recipe ->
                             let
@@ -123,7 +114,7 @@ update msg model =
                                     Recipe.description recipe
                             in
                             ( { model
-                                | current = Viewing recipe
+                                | state = Recipe recipe
                                 , recipes =
                                     Dict.insert title
                                         ( parts, code )
@@ -133,13 +124,110 @@ update msg model =
                             )
 
                         Err error ->
-                            ( { model | current = Editing code (Just error) }, Cmd.none )
+                            ( { model | state = Edit { code = code, error = Just error } }, Cmd.none )
 
                 _ ->
                     ( model, Cmd.none )
 
         NewRecipe ->
-            ( { model | current = Editing "" Nothing }, Cmd.none )
+            ( { model | state = toState NewRoute }, Cmd.none )
+
+        UrlChanged url ->
+            ( { model | state = toState (parseRoute url) }, Cmd.none )
+
+        LinkClicked request ->
+            case request of
+                Browser.Internal url ->
+                    ( model, Navigation.pushUrl model.key (Url.toString url) )
+
+                Browser.External href ->
+                    ( model, Navigation.load href )
+
+
+type Route
+    = OverviewRoute
+    | RecipeRoute String
+    | NewRoute
+    | EditRoute String
+
+
+stateFromRoute : RecipeStore -> Route -> Maybe State
+stateFromRoute recipes route =
+    case route of
+        OverviewRoute ->
+            Just Overview
+
+        RecipeRoute title ->
+            Dict.get title recipes
+                |> Maybe.map
+                    (\( recipe, _ ) ->
+                        Recipe (Recipe.from title recipe)
+                    )
+
+        NewRoute ->
+            Just <| Edit { code = "", error = Nothing }
+
+        EditRoute title ->
+            Dict.get title recipes
+                |> Maybe.map
+                    (\( _, code ) ->
+                        Edit { code = code, error = Nothing }
+                    )
+
+
+stringFromRoute : Route -> String
+stringFromRoute route =
+    case route of
+        OverviewRoute ->
+            "#"
+
+        RecipeRoute title ->
+            "#recipe:" ++ Url.percentEncode title
+
+        NewRoute ->
+            "#new"
+
+        EditRoute title ->
+            "#edit:" ++ Url.percentEncode title
+
+
+routeParser : Parser (Route -> a) a
+routeParser =
+    Parser.fragment
+        (\maybeRaw ->
+            maybeRaw
+                |> Maybe.andThen
+                    (\raw ->
+                        let
+                            extractFrom index string =
+                                String.slice index (String.length string) string
+                                    |> Url.percentDecode
+                        in
+                        if String.startsWith "recipe:" raw then
+                            extractFrom 7 raw
+                                |> Maybe.map RecipeRoute
+
+                        else if raw == "new" then
+                            Just NewRoute
+
+                        else if String.startsWith "edit:" raw then
+                            extractFrom 5 raw
+                                |> Maybe.map EditRoute
+
+                        else if String.isEmpty raw then
+                            Just OverviewRoute
+
+                        else
+                            Nothing
+                    )
+                |> Maybe.withDefault OverviewRoute
+        )
+
+
+parseRoute : Url -> Route
+parseRoute url =
+    Parser.parse routeParser url
+        |> Maybe.withDefault OverviewRoute
 
 
 port save : { title : String, code : String } -> Cmd msg
@@ -157,50 +245,59 @@ subscriptions _ =
 -- View
 
 
-view : Model -> Html Msg
+view : Model -> Browser.Document Msg
 view model =
-    Html.main_
-        [ css
-            [ bodyFontStyle
-            , Css.lineHeight (num 1.4)
-            , Css.maxWidth (em 48)
-            , Css.margin2 zero auto
-            , Css.marginTop (em 2)
+    { title = "Recipe Box"
+    , body =
+        List.map Html.toUnstyled
+            [ Html.main_
+                [ css
+                    [ bodyFontStyle
+                    , Css.lineHeight (num 1.4)
+                    , Css.maxWidth (em 48)
+                    , Css.margin2 zero auto
+                    , Css.marginTop (em 2)
+                    ]
+                ]
+                [ case model.state of
+                    Overview ->
+                        viewRecipeList (Dict.keys model.recipes)
+
+                    Recipe recipe ->
+                        viewRecipe recipe
+
+                    Edit { code, error } ->
+                        viewEditRecipe code error
+                ]
             ]
-        ]
-        [ case model.current of
-            Viewing recipe ->
-                viewRecipe recipe
-
-            Editing code errors ->
-                viewEditRecipe code errors
-
-            None ->
-                viewRecipeList (Dict.keys model.recipes)
-        ]
+    }
 
 
 viewRecipeList : List String -> Html Msg
 viewRecipeList recipeTitles =
     Html.div []
         [ Html.h1 [ css [ headingStyle ] ] [ Html.text "Recipe Box" ]
-        , Html.div [ css [ Css.margin2 (em 1) zero ] ] [ button "New recipe" NewRecipe ]
+        , Html.div [ css [ Css.margin2 (em 1) zero ] ] [ linkButton "New recipe" NewRoute ]
         , let
             recipeList =
                 List.map
                     (\recipeTitle ->
-                        Html.li
-                            [ css
-                                [ clickableStyle
-                                , Css.padding (em 0.5)
-                                , Css.hover
-                                    [ Css.backgroundColor (Css.hsla 0 0 0.5 0.1)
+                        Html.li []
+                            [ Html.a
+                                [ css
+                                    [ clickableStyle
+                                    , linkUnstyle
+                                    , Css.display Css.inlineBlock
+                                    , Css.padding (em 0.5)
+                                    , Css.hover
+                                        [ Css.backgroundColor (Css.hsla 0 0 0.5 0.1)
+                                        ]
                                     ]
+                                , Attributes.href
+                                    (RecipeRoute recipeTitle |> stringFromRoute)
                                 ]
-                            , Events.onClick
-                                (SelectedRecipe recipeTitle)
-                            ]
-                            [ Html.text recipeTitle
+                                [ Html.text recipeTitle
+                                ]
                             ]
                     )
                     recipeTitles
@@ -276,9 +373,9 @@ viewRecipe recipe =
     in
     Html.div []
         [ Html.nav []
-            [ Html.span
-                [ css [ clickableStyle, Css.fontStyle Css.italic ]
-                , Events.onClick ToOverview
+            [ Html.a
+                [ css [ clickableStyle, Css.fontStyle Css.italic, linkUnstyle ]
+                , Attributes.href (OverviewRoute |> stringFromRoute)
                 ]
                 [ Html.text "<< Back to list" ]
             , Html.div
@@ -297,7 +394,7 @@ viewRecipe recipe =
                         ]
                     ]
                 ]
-                [ button "Edit" (EditRecipe <| Recipe.title recipe)
+                [ linkButton "Edit" (EditRoute <| Recipe.title recipe)
                 , button "Delete" (DeleteRecipe <| Recipe.title recipe)
                 ]
             ]
@@ -325,42 +422,41 @@ viewRecipe recipe =
 viewEditRecipe : String -> Maybe String -> Html Msg
 viewEditRecipe code errors =
     Html.div []
-        ((case errors of
+        [ case errors of
             Just error ->
-                [ Html.text error ]
+                Html.div [] [ Html.text error ]
 
             Nothing ->
-                []
-         )
-            ++ [ Html.textarea
-                    [ Events.onInput Edited
-                    , Attributes.value code
-                    , css
-                        [ Css.width (pct 100)
-                        , Css.maxWidth (pct 100)
-                        , Css.height (em 20)
-                        ]
-                    ]
-                    []
-               , button "Save" Save
-               ]
-        )
+                -- Do not remove this item. Otherwise, the textarea might lose focus while typing.
+                Html.div [ css [ Css.display Css.none ] ] []
+        , Html.textarea
+            [ Events.onInput Edited
+            , Attributes.value code
+            , css
+                [ Css.width (pct 100)
+                , Css.maxWidth (pct 100)
+                , Css.height (em 20)
+                ]
+            ]
+            []
+        , button "Save" Save
+        ]
+
+
+linkButton : String -> Route -> Html Msg
+linkButton text route =
+    Html.a
+        [ Attributes.href (stringFromRoute route)
+        , css [ buttonStyle ]
+        ]
+        [ Html.text text ]
 
 
 button : String -> Msg -> Html Msg
 button text msg =
     Html.button
         [ Events.onClick msg
-        , css
-            [ borderStyle
-            , clickableStyle
-            , Css.boxShadow4 zero (rem 0.1) (rem 0.1) (Css.hsla 0 0 0 0.3)
-            , Css.hover
-                [ Css.backgroundColor (Css.hsla 0 0 0.5 0.1)
-                , Css.boxShadow4 zero (rem 0.1) (rem 0.2) (Css.hsla 0 0 0 0.3)
-                ]
-            , headingFontStyle
-            ]
+        , css [ buttonStyle ]
         ]
         [ Html.text text ]
 
@@ -397,6 +493,30 @@ p styles attributes children =
                ]
         )
         children
+
+
+buttonStyle : Css.Style
+buttonStyle =
+    Css.batch
+        [ borderStyle
+        , clickableStyle
+        , Css.boxShadow4 zero (rem 0.1) (rem 0.1) (Css.hsla 0 0 0 0.3)
+        , Css.hover
+            [ Css.backgroundColor (Css.hsla 0 0 0.5 0.1)
+            , Css.boxShadow4 zero (rem 0.1) (rem 0.2) (Css.hsla 0 0 0 0.3)
+            ]
+        , headingFontStyle
+        , Css.fontSize (rem 1)
+        , linkUnstyle
+        ]
+
+
+linkUnstyle : Css.Style
+linkUnstyle =
+    Css.batch
+        [ Css.textDecoration Css.none
+        , Css.color (Css.hsl 0 0 0)
+        ]
 
 
 borderStyle : Css.Style
