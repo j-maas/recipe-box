@@ -14,7 +14,7 @@ import Set exposing (Set)
 import Url exposing (Url)
 
 
-main : Program (List String) Model Msg
+main : Program Flags Model Msg
 main =
     Browser.application
         { init = init
@@ -60,8 +60,14 @@ type alias RecipeStore =
     Dict String ( Recipe.RecipeParts, String )
 
 
-init : List String -> Url -> Navigation.Key -> ( Model, Cmd Msg )
-init rawRecipes url key =
+type alias Flags =
+    { recipes : List String
+    , recipesOnShoppingList : List String
+    }
+
+
+init : Flags -> Url -> Navigation.Key -> ( Model, Cmd Msg )
+init flags url key =
     let
         recipes =
             List.filterMap
@@ -70,13 +76,18 @@ init rawRecipes url key =
                         |> Result.toMaybe
                         |> Maybe.map (\recipe -> ( recipe, code ))
                 )
-                rawRecipes
+                flags.recipes
                 |> List.map (\( recipe, code ) -> ( Recipe.title recipe, ( Recipe.description recipe, code ) ))
                 |> Dict.fromList
 
+        shoppingList =
+            { selectedRecipes = flags.recipesOnShoppingList|> Set.fromList
+            , extras = []
+            }
+
         state =
             { recipes = recipes
-            , shoppingList = { selectedRecipes = Set.empty, extras = [] }
+            , shoppingList = shoppingList
             }
     in
     ( { key = key
@@ -115,7 +126,7 @@ update msg model =
                     (\state ->
                         { state | recipes = Dict.remove title state.recipes }
                     )
-            , delete title
+            , removeRecipe title
             )
 
         Edited code ->
@@ -152,7 +163,7 @@ update msg model =
                                                     state.recipes
                                         }
                                     )
-                            , save { title = title, code = code }
+                            , saveRecipe { title = title, code = code }
                             )
 
                         Err error ->
@@ -162,19 +173,22 @@ update msg model =
                     ( model, Cmd.none )
 
         AddRecipeToShoppingList title ->
+            let
+                state =
+                    model.state
+
+                oldShoppingList =
+                    state.shoppingList
+
+                newShoppingList =
+                    { oldShoppingList | selectedRecipes = Set.insert title oldShoppingList.selectedRecipes }
+            in
             ( model
                 |> updateState
-                    (\state ->
-                        let
-                            oldShoppingList =
-                                state.shoppingList
-
-                            newShoppingList =
-                                { oldShoppingList | selectedRecipes = Set.insert title oldShoppingList.selectedRecipes }
-                        in
-                        { state | shoppingList = newShoppingList }
+                    (\s ->
+                        { s | shoppingList = newShoppingList }
                     )
-            , Cmd.none
+            , saveShoppingListCmd newShoppingList
             )
 
         RemoveRecipeFromShoppingList title ->
@@ -205,7 +219,7 @@ update msg model =
                     (\state ->
                         { state | shoppingList = newShoppingList }
                     )
-            , Cmd.none
+            , saveShoppingListCmd newShoppingList
             )
 
         UrlChanged url ->
@@ -311,10 +325,20 @@ parseRoute url =
         |> Maybe.withDefault OverviewRoute
 
 
-port save : { title : String, code : String } -> Cmd msg
+port saveRecipe : { title : String, code : String } -> Cmd msg
 
 
-port delete : String -> Cmd msg
+port removeRecipe : String -> Cmd msg
+
+
+saveShoppingListCmd : ShoppingList -> Cmd msg
+saveShoppingListCmd shoppingList =
+    shoppingList.selectedRecipes
+        |> Set.toList
+        |> saveShoppingList
+
+
+port saveShoppingList : List String -> Cmd msg
 
 
 subscriptions : Model -> Sub Msg
@@ -842,14 +866,6 @@ buttonStyle =
         , headingFontStyle
         , Css.fontSize (rem 1)
         , linkUnstyle
-        ]
-
-
-buttonUnstyle : Css.Style
-buttonUnstyle =
-    Css.batch
-        [ Css.backgroundColor Css.transparent
-        , Css.border zero
         ]
 
 
