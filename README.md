@@ -20,7 +20,10 @@ To build everything, run `npm run build` and deploy the `dist` folder.
   - [x] Allow parens in description.
   - [x] `<onion: 1>`, `<onion: 1; large onion>`
 - Shopping list
-  - [ ] Generate shopping list from multiple recipes.
+  - [x] Generate shopping list from multiple recipes.
+  - [ ] Persist shopping list.
+  - [ ] Add items to shopping list manually.
+  - [ ] Indicate number of selected and unselected recipes.
 - Sharing
   - [ ] Add copy button.
   - [ ] Import and export recipes from and to files.
