@@ -11,7 +11,7 @@
     <link rel="stylesheet"
         href="https://fonts.googleapis.com/css2?family=Zilla+Slab:ital,wght@0,400;0,700;1,400;1,700&display=swap">
 
-    <script src="elm.js"></script>
+    <script src="elm.min.js"></script>
 </head>
 
 <body>
@@ -24,7 +24,7 @@
                 recipes.push(localStorage.getItem(key));
             }
         }
-        console.log("Loaded " + recipes.length + " recipes.")
+        console.info("Loaded " + recipes.length + " recipes.")
         var app = Elm.Main.init({
             node: document.getElementById('elm'),
             flags: recipes
