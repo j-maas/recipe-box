@@ -69,7 +69,6 @@ type Msg
     = DeleteRecipe String
     | Edited String
     | Save
-    | NewRecipe
     | UrlChanged Url
     | LinkClicked Browser.UrlRequest
 
@@ -128,9 +127,6 @@ update msg model =
 
                 _ ->
                     ( model, Cmd.none )
-
-        NewRecipe ->
-            ( { model | state = toState NewRoute }, Cmd.none )
 
         UrlChanged url ->
             ( { model | state = toState (parseRoute url) }, Cmd.none )
@@ -191,42 +187,33 @@ stringFromRoute route =
             "#edit:" ++ Url.percentEncode title
 
 
-routeParser : Parser (Route -> a) a
-routeParser =
-    Parser.fragment
-        (\maybeRaw ->
-            maybeRaw
-                |> Maybe.andThen
-                    (\raw ->
-                        let
-                            extractFrom index string =
-                                String.slice index (String.length string) string
-                                    |> Url.percentDecode
-                        in
-                        if String.startsWith "recipe:" raw then
-                            extractFrom 7 raw
-                                |> Maybe.map RecipeRoute
-
-                        else if raw == "new" then
-                            Just NewRoute
-
-                        else if String.startsWith "edit:" raw then
-                            extractFrom 5 raw
-                                |> Maybe.map EditRoute
-
-                        else if String.isEmpty raw then
-                            Just OverviewRoute
-
-                        else
-                            Nothing
-                    )
-                |> Maybe.withDefault OverviewRoute
-        )
-
-
 parseRoute : Url -> Route
 parseRoute url =
-    Parser.parse routeParser url
+    url.fragment
+        |> Maybe.andThen
+            (\raw ->
+                let
+                    extractFrom index string =
+                        String.slice index (String.length string) string
+                            |> Url.percentDecode
+                in
+                if String.startsWith "recipe:" raw then
+                    extractFrom 7 raw
+                        |> Maybe.map RecipeRoute
+
+                else if raw == "new" then
+                    Just NewRoute
+
+                else if String.startsWith "edit:" raw then
+                    extractFrom 5 raw
+                        |> Maybe.map EditRoute
+
+                else if String.isEmpty raw then
+                    Just OverviewRoute
+
+                else
+                    Nothing
+            )
         |> Maybe.withDefault OverviewRoute
 
 
