@@ -604,21 +604,12 @@ viewShoppingList recipes shoppingList state =
                 [ Css.margin2 (rem 1) zero
                 ]
                 open
-                [ contentList
-                    (Html.text "No recipes selected.")
-                    (ul [ recipeListStyle ] [])
-                    (\title ->
-                        Html.li []
-                            [ viewRecipeLink title
-                            , smallButton [] "Remove" (RemoveRecipeFromShoppingList title)
-                            ]
-                    )
-                    selectedRecipes
-                , details
+                [ details
                     summaryStyles
-                    [ Html.text "Unselected recipes" ]
+                    [ Html.text "Add recipes" ]
                     [ Css.marginLeft (rem 1)
                     , Css.marginTop (rem 1)
+                    , Css.marginBottom(rem 1)
                     ]
                     open
                     [ contentList
@@ -638,6 +629,16 @@ viewShoppingList recipes shoppingList state =
                         )
                         unselectedRecipes
                     ]
+                , contentList
+                    (Html.text "No recipes selected.")
+                    (ul [ recipeListStyle ] [])
+                    (\title ->
+                        Html.li []
+                            [ viewRecipeLink title
+                            , smallButton [] "Remove" (RemoveRecipeFromShoppingList title)
+                            ]
+                    )
+                    selectedRecipes
                 ]
             ]
 
