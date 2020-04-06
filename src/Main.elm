@@ -374,7 +374,7 @@ viewOverview recipeTitles =
     , Html.div []
         [ h1 [] [] [ Html.text "Recipe Box" ]
         , Html.nav [] [ navLink [] "Go to shopping list" ShoppingListRoute ]
-        , Html.div [ css [ Css.margin2 (em 1) zero ] ] [ linkButton "New recipe" NewRoute ]
+        , toolbar [ linkButton "New recipe" NewRoute ]
         , viewRecipeList recipeTitles
         ]
     )
@@ -461,22 +461,7 @@ viewRecipe recipe =
     , Html.div []
         [ Html.nav []
             [ backToOverview
-            , Html.div
-                [ css
-                    [ Css.margin2 (em 1) zero
-                    , Css.displayFlex
-                    , Css.alignItems Css.flexEnd
-                    , Global.children
-                        [ Global.everything
-                            [ Global.adjacentSiblings
-                                [ Global.everything
-                                    [ Css.marginLeft (em 0.5)
-                                    ]
-                                ]
-                            ]
-                        ]
-                    ]
-                ]
+            , toolbar
                 [ linkButton "Edit" (EditRoute <| Recipe.title recipe)
                 , button [] "Delete" (DeleteRecipe <| Recipe.title recipe)
                 ]
@@ -676,7 +661,7 @@ linkButton : String -> Route -> Html Msg
 linkButton text route =
     styledNode
         Html.a
-        [ buttonStyle ]
+        [ buttonStyle, Css.display Css.inlineBlock ]
         [ Attributes.href (stringFromRoute route)
         ]
         [ Html.text text ]
@@ -715,6 +700,26 @@ buttonWith styles attributes children =
         styles
         attributes
         children
+
+
+toolbar : List (Html Msg) -> Html Msg
+toolbar items =
+    Html.div
+        [ css
+            [ Css.margin2 (rem 1) zero
+            , Css.displayFlex
+            , Global.children
+                [ Global.everything
+                    [ Global.adjacentSiblings
+                        [ Global.everything
+                            [ Css.marginLeft (rem 0.5)
+                            ]
+                        ]
+                    ]
+                ]
+            ]
+        ]
+        items
 
 
 navLink : List Css.Style -> String -> Route -> Html Msg
