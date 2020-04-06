@@ -6574,73 +6574,164 @@ var $author$project$Recipe$parse = function (input) {
 		$author$project$Recipe$deadEndsToString,
 		A2($elm$parser$Parser$run, $author$project$Recipe$parseRecipe, input));
 };
+var $author$project$Main$EditRoute = function (a) {
+	return {$: 'EditRoute', a: a};
+};
+var $author$project$Main$NewRoute = {$: 'NewRoute'};
 var $author$project$Main$OverviewRoute = {$: 'OverviewRoute'};
-var $elm$url$Url$Parser$State = F5(
-	function (visited, unvisited, params, frag, value) {
-		return {frag: frag, params: params, unvisited: unvisited, value: value, visited: visited};
-	});
-var $elm$url$Url$Parser$getFirstMatch = function (states) {
-	getFirstMatch:
-	while (true) {
-		if (!states.b) {
+var $author$project$Main$RecipeRoute = function (a) {
+	return {$: 'RecipeRoute', a: a};
+};
+var $elm$core$Maybe$andThen = F2(
+	function (callback, maybeValue) {
+		if (maybeValue.$ === 'Just') {
+			var value = maybeValue.a;
+			return callback(value);
+		} else {
 			return $elm$core$Maybe$Nothing;
-		} else {
-			var state = states.a;
-			var rest = states.b;
-			var _v1 = state.unvisited;
-			if (!_v1.b) {
-				return $elm$core$Maybe$Just(state.value);
-			} else {
-				if ((_v1.a === '') && (!_v1.b.b)) {
-					return $elm$core$Maybe$Just(state.value);
-				} else {
-					var $temp$states = rest;
-					states = $temp$states;
-					continue getFirstMatch;
-				}
-			}
-		}
-	}
-};
-var $elm$url$Url$Parser$removeFinalEmpty = function (segments) {
-	if (!segments.b) {
-		return _List_Nil;
-	} else {
-		if ((segments.a === '') && (!segments.b.b)) {
-			return _List_Nil;
-		} else {
-			var segment = segments.a;
-			var rest = segments.b;
-			return A2(
-				$elm$core$List$cons,
-				segment,
-				$elm$url$Url$Parser$removeFinalEmpty(rest));
-		}
-	}
-};
-var $elm$url$Url$Parser$preparePath = function (path) {
-	var _v0 = A2($elm$core$String$split, '/', path);
-	if (_v0.b && (_v0.a === '')) {
-		var segments = _v0.b;
-		return $elm$url$Url$Parser$removeFinalEmpty(segments);
-	} else {
-		var segments = _v0;
-		return $elm$url$Url$Parser$removeFinalEmpty(segments);
-	}
-};
-var $elm$url$Url$Parser$addToParametersHelp = F2(
-	function (value, maybeList) {
-		if (maybeList.$ === 'Nothing') {
-			return $elm$core$Maybe$Just(
-				_List_fromArray(
-					[value]));
-		} else {
-			var list = maybeList.a;
-			return $elm$core$Maybe$Just(
-				A2($elm$core$List$cons, value, list));
 		}
 	});
 var $elm$url$Url$percentDecode = _Url_percentDecode;
+var $elm$core$Maybe$withDefault = F2(
+	function (_default, maybe) {
+		if (maybe.$ === 'Just') {
+			var value = maybe.a;
+			return value;
+		} else {
+			return _default;
+		}
+	});
+var $author$project$Main$parseRoute = function (url) {
+	return A2(
+		$elm$core$Maybe$withDefault,
+		$author$project$Main$OverviewRoute,
+		A2(
+			$elm$core$Maybe$andThen,
+			function (raw) {
+				var extractFrom = F2(
+					function (index, string) {
+						return $elm$url$Url$percentDecode(
+							A3(
+								$elm$core$String$slice,
+								index,
+								$elm$core$String$length(string),
+								string));
+					});
+				return A2($elm$core$String$startsWith, 'recipe:', raw) ? A2(
+					$elm$core$Maybe$map,
+					$author$project$Main$RecipeRoute,
+					A2(extractFrom, 7, raw)) : ((raw === 'new') ? $elm$core$Maybe$Just($author$project$Main$NewRoute) : (A2($elm$core$String$startsWith, 'edit:', raw) ? A2(
+					$elm$core$Maybe$map,
+					$author$project$Main$EditRoute,
+					A2(extractFrom, 5, raw)) : ($elm$core$String$isEmpty(raw) ? $elm$core$Maybe$Just($author$project$Main$OverviewRoute) : $elm$core$Maybe$Nothing)));
+			},
+			url.fragment));
+};
+var $author$project$Main$Edit = function (a) {
+	return {$: 'Edit', a: a};
+};
+var $author$project$Main$Recipe = function (a) {
+	return {$: 'Recipe', a: a};
+};
+var $author$project$Recipe$from = F2(
+	function (t, parts) {
+		return $author$project$Recipe$Recipe(
+			{description: parts, title: t});
+	});
+var $author$project$Main$stateFromRoute = F2(
+	function (recipes, route) {
+		switch (route.$) {
+			case 'OverviewRoute':
+				return $elm$core$Maybe$Just($author$project$Main$Overview);
+			case 'RecipeRoute':
+				var title = route.a;
+				return A2(
+					$elm$core$Maybe$map,
+					function (_v1) {
+						var recipe = _v1.a;
+						return $author$project$Main$Recipe(
+							A2($author$project$Recipe$from, title, recipe));
+					},
+					A2($elm$core$Dict$get, title, recipes));
+			case 'NewRoute':
+				return $elm$core$Maybe$Just(
+					$author$project$Main$Edit(
+						{code: '', error: $elm$core$Maybe$Nothing}));
+			default:
+				var title = route.a;
+				return A2(
+					$elm$core$Maybe$map,
+					function (_v2) {
+						var code = _v2.b;
+						return $author$project$Main$Edit(
+							{code: code, error: $elm$core$Maybe$Nothing});
+					},
+					A2($elm$core$Dict$get, title, recipes));
+		}
+	});
+var $author$project$Recipe$title = function (_v0) {
+	var recipe = _v0.a;
+	return recipe.title;
+};
+var $elm$core$Result$toMaybe = function (result) {
+	if (result.$ === 'Ok') {
+		var v = result.a;
+		return $elm$core$Maybe$Just(v);
+	} else {
+		return $elm$core$Maybe$Nothing;
+	}
+};
+var $author$project$Main$init = F3(
+	function (rawRecipes, url, key) {
+		var recipes = $elm$core$Dict$fromList(
+			A2(
+				$elm$core$List$map,
+				function (_v0) {
+					var recipe = _v0.a;
+					var code = _v0.b;
+					return _Utils_Tuple2(
+						$author$project$Recipe$title(recipe),
+						_Utils_Tuple2(
+							$author$project$Recipe$description(recipe),
+							code));
+				},
+				A2(
+					$elm$core$List$filterMap,
+					function (code) {
+						return A2(
+							$elm$core$Maybe$map,
+							function (recipe) {
+								return _Utils_Tuple2(recipe, code);
+							},
+							$elm$core$Result$toMaybe(
+								$author$project$Recipe$parse(code)));
+					},
+					rawRecipes)));
+		return _Utils_Tuple2(
+			{
+				key: key,
+				recipes: recipes,
+				state: A2(
+					$elm$core$Maybe$withDefault,
+					$author$project$Main$Overview,
+					A2(
+						$author$project$Main$stateFromRoute,
+						recipes,
+						$author$project$Main$parseRoute(url)))
+			},
+			$elm$core$Platform$Cmd$none);
+	});
+var $elm$json$Json$Decode$list = _Json_decodeList;
+var $elm$json$Json$Decode$string = _Json_decodeString;
+var $elm$core$Platform$Sub$batch = _Platform_batch;
+var $elm$core$Platform$Sub$none = $elm$core$Platform$Sub$batch(_List_Nil);
+var $author$project$Main$subscriptions = function (_v0) {
+	return $elm$core$Platform$Sub$none;
+};
+var $elm$json$Json$Encode$string = _Json_wrap;
+var $author$project$Main$delete = _Platform_outgoingPort('delete', $elm$json$Json$Encode$string);
+var $elm$browser$Browser$Navigation$load = _Browser_load;
+var $elm$browser$Browser$Navigation$pushUrl = _Browser_pushUrl;
 var $elm$core$Dict$getMin = function (dict) {
 	getMin:
 	while (true) {
@@ -7003,257 +7094,6 @@ var $elm$core$Dict$remove = F2(
 			return x;
 		}
 	});
-var $elm$core$Dict$update = F3(
-	function (targetKey, alter, dictionary) {
-		var _v0 = alter(
-			A2($elm$core$Dict$get, targetKey, dictionary));
-		if (_v0.$ === 'Just') {
-			var value = _v0.a;
-			return A3($elm$core$Dict$insert, targetKey, value, dictionary);
-		} else {
-			return A2($elm$core$Dict$remove, targetKey, dictionary);
-		}
-	});
-var $elm$url$Url$Parser$addParam = F2(
-	function (segment, dict) {
-		var _v0 = A2($elm$core$String$split, '=', segment);
-		if ((_v0.b && _v0.b.b) && (!_v0.b.b.b)) {
-			var rawKey = _v0.a;
-			var _v1 = _v0.b;
-			var rawValue = _v1.a;
-			var _v2 = $elm$url$Url$percentDecode(rawKey);
-			if (_v2.$ === 'Nothing') {
-				return dict;
-			} else {
-				var key = _v2.a;
-				var _v3 = $elm$url$Url$percentDecode(rawValue);
-				if (_v3.$ === 'Nothing') {
-					return dict;
-				} else {
-					var value = _v3.a;
-					return A3(
-						$elm$core$Dict$update,
-						key,
-						$elm$url$Url$Parser$addToParametersHelp(value),
-						dict);
-				}
-			}
-		} else {
-			return dict;
-		}
-	});
-var $elm$url$Url$Parser$prepareQuery = function (maybeQuery) {
-	if (maybeQuery.$ === 'Nothing') {
-		return $elm$core$Dict$empty;
-	} else {
-		var qry = maybeQuery.a;
-		return A3(
-			$elm$core$List$foldr,
-			$elm$url$Url$Parser$addParam,
-			$elm$core$Dict$empty,
-			A2($elm$core$String$split, '&', qry));
-	}
-};
-var $elm$url$Url$Parser$parse = F2(
-	function (_v0, url) {
-		var parser = _v0.a;
-		return $elm$url$Url$Parser$getFirstMatch(
-			parser(
-				A5(
-					$elm$url$Url$Parser$State,
-					_List_Nil,
-					$elm$url$Url$Parser$preparePath(url.path),
-					$elm$url$Url$Parser$prepareQuery(url.query),
-					url.fragment,
-					$elm$core$Basics$identity)));
-	});
-var $author$project$Main$EditRoute = function (a) {
-	return {$: 'EditRoute', a: a};
-};
-var $author$project$Main$NewRoute = {$: 'NewRoute'};
-var $author$project$Main$RecipeRoute = function (a) {
-	return {$: 'RecipeRoute', a: a};
-};
-var $elm$core$Maybe$andThen = F2(
-	function (callback, maybeValue) {
-		if (maybeValue.$ === 'Just') {
-			var value = maybeValue.a;
-			return callback(value);
-		} else {
-			return $elm$core$Maybe$Nothing;
-		}
-	});
-var $elm$url$Url$Parser$Parser = function (a) {
-	return {$: 'Parser', a: a};
-};
-var $elm$url$Url$Parser$fragment = function (toFrag) {
-	return $elm$url$Url$Parser$Parser(
-		function (_v0) {
-			var visited = _v0.visited;
-			var unvisited = _v0.unvisited;
-			var params = _v0.params;
-			var frag = _v0.frag;
-			var value = _v0.value;
-			return _List_fromArray(
-				[
-					A5(
-					$elm$url$Url$Parser$State,
-					visited,
-					unvisited,
-					params,
-					frag,
-					value(
-						toFrag(frag)))
-				]);
-		});
-};
-var $elm$core$Maybe$withDefault = F2(
-	function (_default, maybe) {
-		if (maybe.$ === 'Just') {
-			var value = maybe.a;
-			return value;
-		} else {
-			return _default;
-		}
-	});
-var $author$project$Main$routeParser = $elm$url$Url$Parser$fragment(
-	function (maybeRaw) {
-		return A2(
-			$elm$core$Maybe$withDefault,
-			$author$project$Main$OverviewRoute,
-			A2(
-				$elm$core$Maybe$andThen,
-				function (raw) {
-					var extractFrom = F2(
-						function (index, string) {
-							return $elm$url$Url$percentDecode(
-								A3(
-									$elm$core$String$slice,
-									index,
-									$elm$core$String$length(string),
-									string));
-						});
-					return A2($elm$core$String$startsWith, 'recipe:', raw) ? A2(
-						$elm$core$Maybe$map,
-						$author$project$Main$RecipeRoute,
-						A2(extractFrom, 7, raw)) : ((raw === 'new') ? $elm$core$Maybe$Just($author$project$Main$NewRoute) : (A2($elm$core$String$startsWith, 'edit:', raw) ? A2(
-						$elm$core$Maybe$map,
-						$author$project$Main$EditRoute,
-						A2(extractFrom, 5, raw)) : ($elm$core$String$isEmpty(raw) ? $elm$core$Maybe$Just($author$project$Main$OverviewRoute) : $elm$core$Maybe$Nothing)));
-				},
-				maybeRaw));
-	});
-var $author$project$Main$parseRoute = function (url) {
-	return A2(
-		$elm$core$Maybe$withDefault,
-		$author$project$Main$OverviewRoute,
-		A2($elm$url$Url$Parser$parse, $author$project$Main$routeParser, url));
-};
-var $author$project$Main$Edit = function (a) {
-	return {$: 'Edit', a: a};
-};
-var $author$project$Main$Recipe = function (a) {
-	return {$: 'Recipe', a: a};
-};
-var $author$project$Recipe$from = F2(
-	function (t, parts) {
-		return $author$project$Recipe$Recipe(
-			{description: parts, title: t});
-	});
-var $author$project$Main$stateFromRoute = F2(
-	function (recipes, route) {
-		switch (route.$) {
-			case 'OverviewRoute':
-				return $elm$core$Maybe$Just($author$project$Main$Overview);
-			case 'RecipeRoute':
-				var title = route.a;
-				return A2(
-					$elm$core$Maybe$map,
-					function (_v1) {
-						var recipe = _v1.a;
-						return $author$project$Main$Recipe(
-							A2($author$project$Recipe$from, title, recipe));
-					},
-					A2($elm$core$Dict$get, title, recipes));
-			case 'NewRoute':
-				return $elm$core$Maybe$Just(
-					$author$project$Main$Edit(
-						{code: '', error: $elm$core$Maybe$Nothing}));
-			default:
-				var title = route.a;
-				return A2(
-					$elm$core$Maybe$map,
-					function (_v2) {
-						var code = _v2.b;
-						return $author$project$Main$Edit(
-							{code: code, error: $elm$core$Maybe$Nothing});
-					},
-					A2($elm$core$Dict$get, title, recipes));
-		}
-	});
-var $author$project$Recipe$title = function (_v0) {
-	var recipe = _v0.a;
-	return recipe.title;
-};
-var $elm$core$Result$toMaybe = function (result) {
-	if (result.$ === 'Ok') {
-		var v = result.a;
-		return $elm$core$Maybe$Just(v);
-	} else {
-		return $elm$core$Maybe$Nothing;
-	}
-};
-var $author$project$Main$init = F3(
-	function (rawRecipes, url, key) {
-		var recipes = $elm$core$Dict$fromList(
-			A2(
-				$elm$core$List$map,
-				function (_v0) {
-					var recipe = _v0.a;
-					var code = _v0.b;
-					return _Utils_Tuple2(
-						$author$project$Recipe$title(recipe),
-						_Utils_Tuple2(
-							$author$project$Recipe$description(recipe),
-							code));
-				},
-				A2(
-					$elm$core$List$filterMap,
-					function (code) {
-						return A2(
-							$elm$core$Maybe$map,
-							function (recipe) {
-								return _Utils_Tuple2(recipe, code);
-							},
-							$elm$core$Result$toMaybe(
-								$author$project$Recipe$parse(code)));
-					},
-					rawRecipes)));
-		return _Utils_Tuple2(
-			{
-				key: key,
-				recipes: recipes,
-				state: A2(
-					$elm$core$Maybe$withDefault,
-					$author$project$Main$Overview,
-					A2(
-						$author$project$Main$stateFromRoute,
-						recipes,
-						$author$project$Main$parseRoute(url)))
-			},
-			$elm$core$Platform$Cmd$none);
-	});
-var $elm$json$Json$Decode$list = _Json_decodeList;
-var $elm$json$Json$Decode$string = _Json_decodeString;
-var $elm$core$Platform$Sub$batch = _Platform_batch;
-var $elm$core$Platform$Sub$none = $elm$core$Platform$Sub$batch(_List_Nil);
-var $author$project$Main$subscriptions = function (_v0) {
-	return $elm$core$Platform$Sub$none;
-};
-var $elm$json$Json$Encode$string = _Json_wrap;
-var $author$project$Main$delete = _Platform_outgoingPort('delete', $elm$json$Json$Encode$string);
-var $elm$browser$Browser$Navigation$load = _Browser_load;
-var $elm$browser$Browser$Navigation$pushUrl = _Browser_pushUrl;
 var $elm$json$Json$Encode$object = function (pairs) {
 	return _Json_wrap(
 		A3(
@@ -7399,14 +7239,6 @@ var $author$project$Main$update = F2(
 				} else {
 					return _Utils_Tuple2(model, $elm$core$Platform$Cmd$none);
 				}
-			case 'NewRecipe':
-				return _Utils_Tuple2(
-					_Utils_update(
-						model,
-						{
-							state: toState($author$project$Main$NewRoute)
-						}),
-					$elm$core$Platform$Cmd$none);
 			case 'UrlChanged':
 				var url = msg.a;
 				return _Utils_Tuple2(
@@ -10210,6 +10042,17 @@ var $rtfeldman$elm_css$Css$Global$everything = function (styles) {
 };
 var $rtfeldman$elm_css$Css$flexEnd = $rtfeldman$elm_css$Css$prop1('flex-end');
 var $rtfeldman$elm_css$Css$fontStyle = $rtfeldman$elm_css$Css$prop1('font-style');
+var $elm$core$Dict$update = F3(
+	function (targetKey, alter, dictionary) {
+		var _v0 = alter(
+			A2($elm$core$Dict$get, targetKey, dictionary));
+		if (_v0.$ === 'Just') {
+			var value = _v0.a;
+			return A3($elm$core$Dict$insert, targetKey, value, dictionary);
+		} else {
+			return A2($elm$core$Dict$remove, targetKey, dictionary);
+		}
+	});
 var $author$project$IngredientMap$addMeasure = F3(
 	function (amount, unit, measures) {
 		return A3(
