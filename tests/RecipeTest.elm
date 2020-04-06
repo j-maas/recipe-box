@@ -30,123 +30,123 @@ suite =
             , test "parses paragraphs" <|
                 \_ ->
                     Recipe.parse "# Pizza\n\nOrder some pizza.\n\nLay back.\n\nEnjoy."
-                        |> Result.map Recipe.description
                         |> Expect.equal
                             (Ok <|
-                                [ [ PlainPart "Order some pizza." ]
-                                , [ PlainPart "Lay back." ]
-                                , [ PlainPart "Enjoy." ]
-                                ]
+                                Recipe.from "Pizza"
+                                    [ [ PlainPart "Order some pizza." ]
+                                    , [ PlainPart "Lay back." ]
+                                    , [ PlainPart "Enjoy." ]
+                                    ]
                             )
             , test "replaces single newlines with space" <|
                 \_ ->
                     Recipe.parse "# Pizza\n\nOrder some pizza.\nLay back.\nEnjoy."
-                        |> Result.map Recipe.description
                         |> Expect.equal
                             (Ok <|
-                                [ [ PlainPart "Order some pizza."
-                                  , PlainPart " "
-                                  , PlainPart "Lay back."
-                                  , PlainPart " "
-                                  , PlainPart "Enjoy."
-                                  ]
-                                ]
+                                Recipe.from "Pizza"
+                                    [ [ PlainPart "Order some pizza."
+                                      , PlainPart " "
+                                      , PlainPart "Lay back."
+                                      , PlainPart " "
+                                      , PlainPart "Enjoy."
+                                      ]
+                                    ]
                             )
             , test "unquantified ingredient" <|
                 \_ ->
                     Recipe.parse "# Egg\n\nCook an <egg>."
-                        |> Result.map Recipe.description
                         |> Expect.equal
                             (Ok <|
-                                [ [ PlainPart "Cook an "
-                                  , IngredientPart <| ingredient "egg" Nothing
-                                  , PlainPart "."
-                                  ]
-                                ]
+                                Recipe.from "Egg"
+                                    [ [ PlainPart "Cook an "
+                                      , IngredientPart <| ingredient "egg" Nothing
+                                      , PlainPart "."
+                                      ]
+                                    ]
                             )
             , test "ingredient with descriptive quantity" <|
                 \_ ->
-                    Recipe.parse "# Salt\n\nAdd <salt (a pinch)>."
-                        |> Result.map Recipe.description
+                    Recipe.parse "# Salt\n\nAdd <salt: a pinch>."
                         |> Expect.equal
                             (Ok <|
-                                [ [ PlainPart "Add "
-                                  , IngredientPart <| ingredient "salt" (Just (Description "a pinch"))
-                                  , PlainPart "."
-                                  ]
-                                ]
+                                Recipe.from "Salt"
+                                    [ [ PlainPart "Add "
+                                      , IngredientPart <| ingredient "salt" (Just (Description "a pinch"))
+                                      , PlainPart "."
+                                      ]
+                                    ]
                             )
 
             -- Issue with `Parser.float`. See https://github.com/elm/parser/issues/28
             , test "does not mistake leading e for float" <|
                 \_ ->
-                    Recipe.parse "# Float\n<not a float (e as in exponent)>"
-                        |> Result.map Recipe.description
+                    Recipe.parse "# Float\n<not a float: e as in exponent>"
                         |> Expect.equal
                             (Ok <|
-                                [ [ IngredientPart <| ingredient "not a float" (Just (Description "e as in exponent"))
-                                  ]
-                                ]
+                                Recipe.from "Float"
+                                    [ [ IngredientPart <| ingredient "not a float" (Just (Description "e as in exponent"))
+                                      ]
+                                    ]
                             )
             , test "allows parentheses in quantities" <|
                 \_ ->
-                    Recipe.parse "# Butter\n\nCook in <butter (some (for frying))>."
-                        |> Result.map Recipe.description
+                    Recipe.parse "# Butter\n\nCook in <butter: some (for frying)>."
                         |> Expect.equal
                             (Ok <|
-                                [ [ PlainPart "Cook in "
-                                  , IngredientPart <| ingredient "butter" (Just (Description "some (for frying)"))
-                                  , PlainPart "."
-                                  ]
-                                ]
+                                Recipe.from "Butter"
+                                    [ [ PlainPart "Cook in "
+                                      , IngredientPart <| ingredient "butter" (Just (Description "some (for frying)"))
+                                      , PlainPart "."
+                                      ]
+                                    ]
                             )
             , test "ingredient with amount" <|
                 \_ ->
-                    Recipe.parse "# Egg\n\nCook an <egg (1)>."
-                        |> Result.map Recipe.description
+                    Recipe.parse "# Egg\n\nCook an <egg: 1>."
                         |> Expect.equal
                             (Ok <|
-                                [ [ PlainPart "Cook an "
-                                  , IngredientPart <| ingredient "egg" (Just (Amount 1))
-                                  , PlainPart "."
-                                  ]
-                                ]
+                                Recipe.from "Egg"
+                                    [ [ PlainPart "Cook an "
+                                      , IngredientPart <| ingredient "egg" (Just (Amount 1))
+                                      , PlainPart "."
+                                      ]
+                                    ]
                             )
             , test "ingredient with unit" <|
                 \_ ->
-                    Recipe.parse "# Water\n\nBoil <water (200 ml)>."
-                        |> Result.map Recipe.description
+                    Recipe.parse "# Water\n\nBoil <water: 200 ml>."
                         |> Expect.equal
                             (Ok <|
-                                [ [ PlainPart "Boil "
-                                  , IngredientPart <| ingredient "water" (Just (Measure 200 "ml"))
-                                  , PlainPart "."
-                                  ]
-                                ]
+                                Recipe.from "Water"
+                                    [ [ PlainPart "Boil "
+                                      , IngredientPart <| ingredient "water" (Just (Measure 200 "ml"))
+                                      , PlainPart "."
+                                      ]
+                                    ]
                             )
             , test "ingredient with decimal quantity" <|
                 \_ ->
-                    Recipe.parse "# Water\n\nBoil <water (0.2 l)>."
-                        |> Result.map Recipe.description
+                    Recipe.parse "# Water\n\nBoil <water: 0.2 l>."
                         |> Expect.equal
                             (Ok <|
-                                [ [ PlainPart "Boil "
-                                  , IngredientPart <| ingredient "water" (Just (Measure 0.2 "l"))
-                                  , PlainPart "."
-                                  ]
-                                ]
+                                Recipe.from "Water"
+                                    [ [ PlainPart "Boil "
+                                      , IngredientPart <| ingredient "water" (Just (Measure 0.2 "l"))
+                                      , PlainPart "."
+                                      ]
+                                    ]
                             )
             , test "ingredient with amount and different list name" <|
                 \_ ->
-                    Recipe.parse "# Onion\n\nCut the <onion (1: large onion)>."
-                        |> Result.map Recipe.description
+                    Recipe.parse "# Onion\n\nCut the <onion: 1; large onion>."
                         |> Expect.equal
                             (Ok <|
-                                [ [ PlainPart "Cut the "
-                                  , IngredientPart <| ingredientWithName "onion" (Just (Amount 1)) "large onion"
-                                  , PlainPart "."
-                                  ]
-                                ]
+                                Recipe.from "Onion"
+                                    [ [ PlainPart "Cut the "
+                                      , IngredientPart <| ingredientWithName "onion" (Just (Amount 1)) "large onion"
+                                      , PlainPart "."
+                                      ]
+                                    ]
                             )
             ]
         , describe "ingredients"

@@ -1,4 +1,7 @@
-module Recipe exposing (Ingredient, ParsingError, Quantity(..), Recipe, RecipePart(..), RecipeParts, description, from, getListName, getQuantity, getText, ingredient, ingredientWithName, ingredients, map, parse, title)
+--module Recipe exposing (Ingredient, ParsingError, Quantity(..), Recipe, RecipePart(..), RecipeParts, description, from, getListName, getQuantity, getText, ingredient, ingredientWithName, ingredients, map, parse, title)
+
+
+module Recipe exposing (..)
 
 import Parser exposing ((|.), (|=), Parser)
 import Set exposing (Set)
@@ -161,11 +164,7 @@ parsePlain endChars =
 parseIngredient : Parser RecipePart
 parseIngredient =
     Parser.succeed
-        (\text maybeMeta ->
-            let
-                ( maybeQuantity, maybeListName ) =
-                    Maybe.withDefault ( Nothing, Nothing ) maybeMeta
-            in
+        (\text maybeQuantity maybeListName ->
             IngredientPart
                 (Ingredient
                     { text = String.trim text
@@ -175,21 +174,17 @@ parseIngredient =
                 )
         )
         |. Parser.symbol "<"
-        |= parseUntil (Set.fromList [ '(', '>' ])
+        |= parseUntil (Set.fromList [ ':', ';', '>' ])
         |= parseOptional
-            (Parser.succeed
-                (\quant listName ->
-                    ( quant, listName )
-                )
-                |. Parser.symbol "("
-                |= parseOptional
-                    (parseQuantity (Set.fromList [ ')', ':' ]))
-                |= parseOptional
-                    (Parser.succeed String.trim
-                        |. Parser.symbol ":"
-                        |= parseUntilWithParens (Set.fromList [ ')' ])
-                    )
-                |. Parser.symbol ")"
+            (Parser.succeed identity
+                |. Parser.symbol ":"
+                |. parseWhitespace
+                |= parseQuantity (Set.fromList [ ';', '>' ])
+            )
+        |= parseOptional
+            (Parser.succeed String.trim
+                |. Parser.symbol ";"
+                |= parseUntil (Set.fromList [ '>' ])
             )
         |. Parser.symbol ">"
 
@@ -210,7 +205,7 @@ parseQuantity endChars =
             |= parseOptional
                 (Parser.succeed identity
                     |. Parser.symbol " "
-                    |= parseUntilWithParens endChars
+                    |= parseUntil endChars
                 )
         , parseDescription endChars
         ]
@@ -222,7 +217,7 @@ parseDescription endChars =
         (\inside ->
             String.trim inside |> Description
         )
-        |= parseUntilWithParens endChars
+        |= parseUntil endChars
 
 
 parseUntil : Set Char -> Parser String
@@ -238,60 +233,17 @@ parseUntil endChars =
             )
 
 
-parseUntilWithParens : Set Char -> Parser String
-parseUntilWithParens endChars =
-    Parser.getChompedString (chompNestedParensUntil endChars)
-        |> Parser.andThen
-            (\text ->
-                if String.isEmpty text then
-                    Parser.problem "Inside text cannot be empty"
-
-                else
-                    Parser.succeed text
-            )
-
-
-chompNestedParensUntil : Set Char -> Parser ()
-chompNestedParensUntil endChars =
-    Parser.loop 0
-        (\closeCount ->
-            Parser.oneOf
-                [ Parser.symbol "("
-                    |> Parser.map
-                        (\_ ->
-                            Parser.Loop (closeCount + 1)
-                        )
-                , let
-                    newCloseCount =
-                        closeCount - 1
-                  in
-                  Parser.chompIf (\c -> c == ')' && newCloseCount >= 0)
-                    |> Parser.map
-                        (\_ ->
-                            Parser.Loop newCloseCount
-                        )
-                , Parser.succeed (\first second -> second - first)
-                    |= Parser.getOffset
-                    |. Parser.chompWhile (\c -> (not <| Set.member c endChars) && c /= '(' && c /= ')')
-                    |= Parser.getOffset
-                    |> Parser.map
-                        (\difference ->
-                            if difference > 0 then
-                                Parser.Loop closeCount
-
-                            else
-                                Parser.Done ()
-                        )
-                ]
-        )
-
-
 parseOptional : Parser a -> Parser (Maybe a)
 parseOptional parser =
     Parser.oneOf
         [ parser |> Parser.map Just
         , Parser.succeed Nothing
         ]
+
+
+parseWhitespace : Parser ()
+parseWhitespace =
+    Parser.chompWhile (\c -> c == ' ' || c == '\t')
 
 
 

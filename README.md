@@ -15,9 +15,15 @@ To build everything, run `npm run build` and deploy the `dist` folder.
 - [x] Recipe titles.
 - [x] Store recipe persistently.
 - [x] Store multiple recipes.
+- [x] Rework syntax
+  - [x] Move list name outside of parens.
+  - [x] Allow parens in description.
+  - [x] `<onion: 1>`, `<onion: 1; large onion>`
 - [ ] Generate shopping list from multiple recipes.
 - [ ] Import and export recipes from and to files.
 - [ ] Filter recipes.
-- [ ] Indicate how many ingredients there are.
+- [ ] Indicate how many ingredients there are in ingredient heading (before opening the list).
+- [ ] Switch for showing/hiding quantities in description. This is helpful when assembling ingredients while cooking.
 - [ ] Highlight occurrences of ingredients on hover.
 - [ ] Allow setting portions.
+- [ ] Embed timers.
