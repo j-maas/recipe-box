@@ -81,7 +81,7 @@ init flags url key =
                 |> Dict.fromList
 
         shoppingList =
-            { selectedRecipes = flags.recipesOnShoppingList|> Set.fromList
+            { selectedRecipes = flags.recipesOnShoppingList |> Set.fromList
             , extras = []
             }
 
@@ -104,6 +104,7 @@ type Msg
     | Save
     | AddRecipeToShoppingList String
     | RemoveRecipeFromShoppingList String
+    | ClearShoppingList
     | UrlChanged Url
     | LinkClicked Browser.UrlRequest
 
@@ -221,6 +222,13 @@ update msg model =
                     )
             , saveShoppingListCmd newShoppingList
             )
+
+        ClearShoppingList ->
+            let
+                newShoppingList =
+                    { selectedRecipes = Set.empty, extras = [] }
+            in
+            ( model |> updateState (\state -> { state | shoppingList = newShoppingList }), saveShoppingListCmd newShoppingList )
 
         UrlChanged url ->
             ( { model | screen = toScreen (parseRoute url) }, Cmd.none )
@@ -613,7 +621,8 @@ viewShoppingList recipes shoppingList state =
                 [ Css.margin2 (rem 1) zero
                 ]
                 open
-                [ details
+                [ toolbar [ smallButton [] "Remove everything" ClearShoppingList ]
+                , details
                     summaryStyles
                     [ Html.text "Add recipes" ]
                     [ Css.marginLeft (rem 1)
