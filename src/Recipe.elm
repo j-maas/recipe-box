@@ -1,14 +1,14 @@
-module Recipe exposing (Ingredient, ParsingError, Quantity(..), Recipe, RecipePart(..), RecipeParts, description, from, getListName, getQuantity, getText, ingredient, ingredientWithName, ingredients, map, parse, title)
+module Recipe exposing (Ingredient, ParsingError, Quantity(..), Recipe, RecipePart(..), Parts, steps, from, getListName, getQuantity, getText, ingredient, ingredientWithName, ingredients, map, parse, title)
 
 import Parser exposing ((|.), (|=), Parser)
 import Set exposing (Set)
 
 
 type Recipe
-    = Recipe { title : String, description : RecipeParts }
+    = Recipe { title : String, steps : Parts }
 
 
-type alias RecipeParts =
+type alias Parts =
     List (List RecipePart)
 
 
@@ -64,11 +64,11 @@ type Quantity
     | Description String
 
 
-from : String -> RecipeParts -> Recipe
+from : String -> Parts -> Recipe
 from t parts =
     Recipe
         { title = t
-        , description = parts
+        , steps = parts
         }
 
 
@@ -84,7 +84,7 @@ type alias ParsingError =
 
 map : (RecipePart -> a) -> Recipe -> List (List a)
 map f (Recipe recipe) =
-    List.map (\paragraph -> List.map f paragraph) recipe.description
+    List.map (\paragraph -> List.map f paragraph) recipe.steps
 
 
 title : Recipe -> String
@@ -92,12 +92,12 @@ title (Recipe recipe) =
     recipe.title
 
 
-description : Recipe -> RecipeParts
-description (Recipe recipe) =
-    recipe.description
+steps : Recipe -> Parts
+steps (Recipe recipe) =
+    recipe.steps
 
 
-ingredients : RecipeParts -> List Ingredient
+ingredients : Parts -> List Ingredient
 ingredients parts =
     List.concat parts
         |> List.filterMap
@@ -121,7 +121,7 @@ parseRecipe =
         (\t desc ->
             Recipe
                 { title = t
-                , description = desc
+                , steps = desc
                 }
         )
         |. Parser.symbol "# "
@@ -130,7 +130,7 @@ parseRecipe =
         |= Parser.loop ( [], [] ) parseRecursion
 
 
-parseRecursion : ( List RecipePart, RecipeParts ) -> Parser (Parser.Step ( List RecipePart, RecipeParts ) RecipeParts)
+parseRecursion : ( List RecipePart, Parts ) -> Parser (Parser.Step ( List RecipePart, Parts ) Parts)
 parseRecursion ( next, paragraphs ) =
     Parser.oneOf
         [ Parser.symbol "\n\n"

@@ -1,4 +1,4 @@
-module IngredientMap exposing (IngredientMap, fromDescription, fromIngredients, fromList, Quantities)
+module IngredientMap exposing (IngredientMap, Quantities, fromDescription, fromIngredients, fromList)
 
 import Dict exposing (Dict)
 import Recipe exposing (Ingredient, Quantity)
@@ -61,7 +61,7 @@ fromIngredients ingredients =
         |> fromList
 
 
-fromDescription : Recipe.RecipeParts -> IngredientMap
+fromDescription : Recipe.Parts -> IngredientMap
 fromDescription parts =
     Recipe.ingredients parts
         |> fromIngredients

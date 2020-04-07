@@ -53,7 +53,7 @@ type Screen
 
 
 type alias RecipeStore =
-    Dict String ( Recipe.RecipeParts, String )
+    Dict String ( Recipe.Parts, String )
 
 
 type alias Flags =
@@ -73,7 +73,7 @@ init flags url key =
                         |> Maybe.map (\recipe -> ( recipe, code ))
                 )
                 flags.recipes
-                |> List.map (\( recipe, code ) -> ( Recipe.title recipe, ( Recipe.description recipe, code ) ))
+                |> List.map (\( recipe, code ) -> ( Recipe.title recipe, ( Recipe.steps recipe, code ) ))
                 |> Dict.fromList
 
         shoppingList =
@@ -100,7 +100,6 @@ type Msg
     | Save
     | AddRecipeToShoppingList String
     | RemoveRecipeFromShoppingList String
-    | ClearShoppingList
     | UrlChanged Url
     | LinkClicked Browser.UrlRequest
 
@@ -148,7 +147,7 @@ update msg model =
                                     Recipe.title recipe
 
                                 parts =
-                                    Recipe.description recipe
+                                    Recipe.steps recipe
                             in
                             ( { model | screen = Recipe recipe }
                                 |> updateState
@@ -203,13 +202,6 @@ update msg model =
                     )
             , saveShoppingListCmd newShoppingList
             )
-
-        ClearShoppingList ->
-            let
-                newShoppingList =
-                    { selectedRecipes = Set.empty, extras = [] }
-            in
-            ( model |> updateState (\state -> { state | shoppingList = newShoppingList }), saveShoppingListCmd newShoppingList )
 
         UrlChanged url ->
             ( { model | screen = toScreen (parseRoute url) }, Cmd.none )
@@ -454,14 +446,14 @@ viewRecipe recipe =
             Recipe.title recipe
 
         ingredientMap =
-            IngredientMap.fromDescription <| Recipe.description recipe
+            IngredientMap.fromDescription <| Recipe.steps recipe
 
         ingredientsView =
             viewIngredientList
                 [ Html.text "No ingredients required." ]
                 ingredientMap
 
-        descriptionView =
+        stepsView =
             Recipe.map
                 (\recipePart ->
                     case recipePart of
@@ -509,8 +501,8 @@ viewRecipe recipe =
                     [ Attributes.attribute "open" "" ]
                     [ ingredientsView
                     ]
-                :: h2 [ headingStyle ] [] [ Html.text "Description" ]
-                :: descriptionView
+                :: h2 [ headingStyle ] [] [ Html.text "Steps" ]
+                :: stepsView
             )
         ]
     )
