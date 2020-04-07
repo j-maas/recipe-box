@@ -653,7 +653,7 @@ viewShoppingList language recipes shoppingList =
                     [ Html.text
                         (language.shoppingList.addRecipesWithCount <| List.length unselectedRecipes)
                     ]
-                    [ Css.marginLeft (rem 1)
+                    [ Css.marginLeft (rem 0.5)
                     , Css.marginTop (rem 1)
                     , Css.marginBottom (rem 1)
                     ]
