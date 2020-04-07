@@ -64,7 +64,7 @@ type alias RecipeStore =
 
 type alias Flags =
     { recipes : List String
-    , recipesOnShoppingList : List String
+    , shoppingList : PortShoppingList
     , language : String
     }
 
@@ -84,8 +84,8 @@ init flags url key =
                 |> Dict.fromList
 
         shoppingList =
-            { selectedRecipes = flags.recipesOnShoppingList |> Set.fromList
-            , checked = Set.empty
+            { selectedRecipes = flags.shoppingList.selectedRecipes |> Set.fromList
+            , checked = flags.shoppingList.checked |> Set.fromList
             }
 
         state =
@@ -375,12 +375,27 @@ port removeRecipe : String -> Cmd msg
 
 saveShoppingListCmd : ShoppingList -> Cmd msg
 saveShoppingListCmd shoppingList =
-    shoppingList.selectedRecipes
-        |> Set.toList
-        |> saveShoppingList
+    let
+        selectedRecipes =
+            shoppingList.selectedRecipes
+                |> Set.toList
+
+        checked =
+            shoppingList.checked |> Set.toList
+    in
+    saveShoppingList
+        { selectedRecipes = selectedRecipes
+        , checked = checked
+        }
 
 
-port saveShoppingList : List String -> Cmd msg
+type alias PortShoppingList =
+    { selectedRecipes : List String
+    , checked : List String
+    }
+
+
+port saveShoppingList : PortShoppingList -> Cmd msg
 
 
 port saveLanguage : String -> Cmd msg

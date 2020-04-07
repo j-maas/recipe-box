@@ -27,12 +27,22 @@
         console.info("Loaded " + recipes.length + " recipes.")
 
         var shoppingListKey = "shoppingList";
-        function getRecipesOnShoppingList() {
-            return JSON.parse(localStorage.getItem(shoppingListKey)) || [];
+        function getShoppingList() {
+            return JSON.parse(localStorage.getItem(shoppingListKey)) || {
+                selectedRecipes: [],
+                checked: [],
+            };
         }
 
-        var recipesOnShoppingList = getRecipesOnShoppingList();
-        console.info("Loaded shopping list with " + recipesOnShoppingList.length + " recipes selected.")
+        var shoppingList = getShoppingList();
+        function logShoppingList(sl) {
+            return "shopping list with "
+                + sl.selectedRecipes.length
+                + " recipes selected and "
+                + sl.checked.length
+                + " items checked";
+        }
+        console.info("Loaded " + logShoppingList(shoppingList) + ".")
 
         var languageKey = "languageSelection"
         var selectedLanguage = localStorage.getItem(languageKey);
@@ -47,7 +57,7 @@
             node: document.getElementById('elm'),
             flags: {
                 recipes,
-                recipesOnShoppingList,
+                shoppingList,
                 language,
             }
         });
@@ -66,9 +76,9 @@
             return "recipe:" + title;
         }
 
-        function saveShoppingList(recipes) {
-            console.info("Storing shopping list with " + recipes.length + " recipes selected.");
-            localStorage.setItem(shoppingListKey, JSON.stringify(recipes));
+        function saveShoppingList(shoppingList) {
+            console.info("Saved " + logShoppingList(shoppingList) + ".")
+            localStorage.setItem(shoppingListKey, JSON.stringify(shoppingList));
         }
 
         function saveLanguage(code) {
@@ -82,8 +92,8 @@
         app.ports.removeRecipe.subscribe(function (title) {
             removeRecipe(title);
         });
-        app.ports.saveShoppingList.subscribe(function (recipes) {
-            saveShoppingList(recipes);
+        app.ports.saveShoppingList.subscribe(function (shoppingList) {
+            saveShoppingList(shoppingList);
         });
         app.ports.saveLanguage.subscribe(function (code) {
             saveLanguage(code);
