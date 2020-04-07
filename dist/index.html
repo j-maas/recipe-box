@@ -39,8 +39,9 @@
         var language = selectedLanguage || navigator.language;
         if (selectedLanguage) {
             console.info("Loaded language preference of '" + selectedLanguage + "'.");
+        } else {
+            console.info("No language preference found. Guessing language based on browser language and choosing '" + language + "'.");
         }
-        console.info("Setting language to '" + language + "'.");
 
         var app = Elm.Main.init({
             node: document.getElementById('elm'),
