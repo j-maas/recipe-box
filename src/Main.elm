@@ -453,8 +453,7 @@ recipeListStyle : Css.Style
 recipeListStyle =
     Css.batch
         [ Css.property "list-style-type" "\">  \""
-        , Css.listStylePosition Css.inside
-        , Css.paddingLeft zero
+        , Css.paddingLeft (rem 1)
         ]
 
 
@@ -474,7 +473,7 @@ recipeLinkStyle =
     Css.batch
         [ clickableStyle
         , linkUnstyle
-        , Css.display Css.inlineBlock
+        , Css.display Css.inlineFlex
         , Css.padding (rem 0.5)
         , borderStyle
         , Css.borderColor Css.transparent
