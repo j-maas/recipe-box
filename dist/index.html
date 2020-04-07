@@ -18,13 +18,20 @@
     <div id="elm"></div>
     <script>
         var recipes = [];
+        var recipeChecks = [];
+        var recipePrefix = "recipe:"
+        var checksPrefix = "recipeChecks:"
         for (var i = 0; i < localStorage.length; i++) {
             var key = localStorage.key(i);
-            if (key.startsWith("recipe:")) {
+            if (key.startsWith(recipePrefix)) {
                 recipes.push(localStorage.getItem(key));
+            } else if (key.startsWith(checksPrefix)) {
+                var title = key.slice(checksPrefix.length);
+                recipeChecks.push([title, JSON.parse(localStorage.getItem(key))]);
             }
         }
-        console.info("Loaded " + recipes.length + " recipes.")
+        console.info("Loaded " + recipes.length + " recipes.");
+        console.info("Loaded check marks for " + recipeChecks.length + " recipes.");
 
         var shoppingListKey = "shoppingList";
         function getShoppingList() {
@@ -57,6 +64,7 @@
             node: document.getElementById('elm'),
             flags: {
                 recipes,
+                recipeChecks,
                 shoppingList,
                 language,
             }
@@ -64,16 +72,25 @@
 
         function saveRecipe(title, code) {
             console.info("Saving recipe with title '" + title + "'.")
-            localStorage.setItem(keyFromTitle(title), code);
+            localStorage.setItem(recipeKeyFromTitle(title), code);
         }
 
         function removeRecipe(title) {
             console.info("Removing recipe with title '" + title + "'.")
-            localStorage.removeItem(keyFromTitle(title));
+            localStorage.removeItem(recipeKeyFromTitle(title));
         }
 
-        function keyFromTitle(title) {
-            return "recipe:" + title;
+        function recipeKeyFromTitle(title) {
+            return recipePrefix + title;
+        }
+
+        function saveRecipeChecks(title, checks) {
+            console.info("Saving " + checks.length + " check marks for recipe with title '" + title + "'.");
+            localStorage.setItem(checksKeyFromTitle(title), JSON.stringify(checks));
+        }
+
+        function checksKeyFromTitle(title) {
+            return checksPrefix + title;
         }
 
         function saveShoppingList(shoppingList) {
@@ -91,6 +108,9 @@
         });
         app.ports.removeRecipe.subscribe(function (title) {
             removeRecipe(title);
+        });
+        app.ports.saveRecipeChecks.subscribe(function (data) {
+            saveRecipeChecks(data.title, data.checks);
         });
         app.ports.saveShoppingList.subscribe(function (shoppingList) {
             saveShoppingList(shoppingList);

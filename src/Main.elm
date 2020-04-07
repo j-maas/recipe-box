@@ -41,6 +41,7 @@ type alias Language =
 
 type alias State =
     { recipes : RecipeStore
+    , recipeChecks : Dict String (Set String)
     , shoppingList : ShoppingList
     }
 
@@ -64,6 +65,7 @@ type alias RecipeStore =
 
 type alias Flags =
     { recipes : List String
+    , recipeChecks : List ( String, List String )
     , shoppingList : PortShoppingList
     , language : String
     }
@@ -90,6 +92,11 @@ init flags url key =
 
         state =
             { recipes = recipes
+            , recipeChecks =
+                List.map
+                    (\( title, checks ) -> ( title, Set.fromList checks ))
+                    flags.recipeChecks
+                    |> Dict.fromList
             , shoppingList = shoppingList
             }
     in
@@ -109,8 +116,8 @@ type Msg
     | Save
     | AddRecipeToShoppingList String
     | RemoveRecipeFromShoppingList String
-    | CheckIngredientOnShoppingList String
-    | UncheckIngredientOnShoppingList String
+    | UpdateCheckOnShoppingList String Bool
+    | UpdateCheckOnRecipe String String Bool
     | SwitchLanguage String
     | UrlChanged Url
     | LinkClicked Browser.UrlRequest
@@ -236,7 +243,7 @@ update msg model =
             , saveShoppingListCmd newShoppingList
             )
 
-        CheckIngredientOnShoppingList name ->
+        UpdateCheckOnShoppingList ingredientName checked ->
             let
                 state =
                     model.state
@@ -244,8 +251,15 @@ update msg model =
                 oldShoppingList =
                     model.state.shoppingList
 
+                operation =
+                    if checked then
+                        Set.insert
+
+                    else
+                        Set.remove
+
                 newShoppingList =
-                    { oldShoppingList | checked = Set.insert name oldShoppingList.checked }
+                    { oldShoppingList | checked = operation ingredientName oldShoppingList.checked }
             in
             ( { model
                 | state =
@@ -254,22 +268,34 @@ update msg model =
             , saveShoppingListCmd newShoppingList
             )
 
-        UncheckIngredientOnShoppingList name ->
+        UpdateCheckOnRecipe recipeTitle ingredientName checked ->
             let
                 state =
                     model.state
 
-                oldShoppingList =
-                    model.state.shoppingList
+                operation =
+                    if checked then
+                        Set.insert
 
-                newShoppingList =
-                    { oldShoppingList | checked = Set.remove name oldShoppingList.checked }
+                    else
+                        Set.remove
+
+                oldChecks =
+                    Dict.get recipeTitle state.recipeChecks
+                        |> Maybe.withDefault Set.empty
+
+                newChecks =
+                    operation ingredientName oldChecks
+
+                newRecipeChecks =
+                    state.recipeChecks
+                        |> Dict.insert recipeTitle newChecks
             in
             ( { model
                 | state =
-                    { state | shoppingList = newShoppingList }
+                    { state | recipeChecks = newRecipeChecks }
               }
-            , saveShoppingListCmd newShoppingList
+            , saveRecipeChecksCmd recipeTitle newChecks
             )
 
         SwitchLanguage code ->
@@ -384,6 +410,17 @@ parseRoute url =
 port saveRecipe : { title : String, code : String } -> Cmd msg
 
 
+saveRecipeChecksCmd : String -> Set String -> Cmd msg
+saveRecipeChecksCmd recipeTitle checks =
+    saveRecipeChecks
+        { title = recipeTitle
+        , checks = checks |> Set.toList
+        }
+
+
+port saveRecipeChecks : { title : String, checks : List String } -> Cmd msg
+
+
 port removeRecipe : String -> Cmd msg
 
 
@@ -436,7 +473,14 @@ view model =
                     viewOverview model.language (Dict.keys state.recipes)
 
                 Recipe recipe ->
-                    viewRecipe model.language recipe
+                    let
+                        title =
+                            Recipe.title recipe
+
+                        recipeChecks =
+                            Dict.get title model.state.recipeChecks
+                    in
+                    viewRecipe model.language recipe recipeChecks
 
                 Edit { code, error } ->
                     viewEditRecipe model.language code error
@@ -559,8 +603,8 @@ recipeLinkStyle =
         ]
 
 
-viewRecipe : Language -> Recipe -> ( Maybe String, Html Msg )
-viewRecipe language recipe =
+viewRecipe : Language -> Recipe -> Maybe (Set String) -> ( Maybe String, Html Msg )
+viewRecipe language recipe recipeChecks =
     let
         title =
             Recipe.title recipe
@@ -572,8 +616,8 @@ viewRecipe language recipe =
             viewIngredientList
                 [ Html.text language.recipe.noIngredientsRequired ]
                 ingredientMap
-                Set.empty
-                (\_ _ -> NoOp)
+                (recipeChecks |> Maybe.withDefault Set.empty)
+                (UpdateCheckOnRecipe title)
 
         stepsView =
             Recipe.map
@@ -791,13 +835,7 @@ viewShoppingList language recipes shoppingList =
                 [ Html.text language.shoppingList.emptyShoppingList ]
                 (IngredientMap.fromIngredients allIngredients)
                 shoppingList.checked
-                (\name checked ->
-                    if checked then
-                        CheckIngredientOnShoppingList name
-
-                    else
-                        UncheckIngredientOnShoppingList name
-                )
+                UpdateCheckOnShoppingList
       in
       Html.div []
         ([ Html.nav [] [ backToOverview language ]
