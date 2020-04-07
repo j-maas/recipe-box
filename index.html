@@ -34,11 +34,20 @@
         var recipesOnShoppingList = getRecipesOnShoppingList();
         console.info("Loaded shopping list with " + recipesOnShoppingList.length + " recipes selected.")
 
+        var languageKey = "languageSelection"
+        var selectedLanguage = localStorage.getItem(languageKey);
+        var language = selectedLanguage || navigator.language;
+        if (selectedLanguage) {
+            console.info("Loaded language preference of '" + selectedLanguage + "'.");
+        }
+        console.info("Setting language to '" + language + "'.");
+
         var app = Elm.Main.init({
             node: document.getElementById('elm'),
             flags: {
                 recipes,
-                recipesOnShoppingList
+                recipesOnShoppingList,
+                language,
             }
         });
 
@@ -52,13 +61,18 @@
             localStorage.removeItem(keyFromTitle(title));
         }
 
+        function keyFromTitle(title) {
+            return "recipe:" + title;
+        }
+
         function saveShoppingList(recipes) {
             console.info("Storing shopping list with " + recipes.length + " recipes selected.");
             localStorage.setItem(shoppingListKey, JSON.stringify(recipes));
         }
 
-        function keyFromTitle(title) {
-            return "recipe:" + title;
+        function saveLanguage(code) {
+            console.info("Storing language preference for '" + code + "'.");
+            localStorage.setItem(languageKey, code);
         }
 
         app.ports.saveRecipe.subscribe(function (data) {
@@ -70,6 +84,9 @@
         app.ports.saveShoppingList.subscribe(function (recipes) {
             saveShoppingList(recipes);
         });
+        app.ports.saveLanguage.subscribe(function (code) {
+            saveLanguage(code);
+        })
     </script>
 </body>
 
