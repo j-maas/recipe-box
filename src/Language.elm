@@ -1,4 +1,6 @@
-module Language exposing (Language, fromString)
+module Language exposing (Language, available, fromString)
+
+import Dict exposing (Dict)
 
 
 type alias Language a =
@@ -35,10 +37,18 @@ type alias Language a =
 fromString : String -> Language a
 fromString code =
     if String.startsWith "de" code then
-        german
+        deutsch
 
     else
         english
+
+
+available : Dict String { name : String, content : Language a }
+available =
+    Dict.fromList
+        [ ( "en", { name = "English", content = english } )
+        , ( "de", { name = "Deutsch", content = deutsch } )
+        ]
 
 
 english : Language a
@@ -97,8 +107,8 @@ english =
     }
 
 
-german : Language a
-german =
+deutsch : Language a
+deutsch =
     { title = "Rezeptkasten"
     , overview =
         { goToShoppingList = "Zur Einkaufsliste"

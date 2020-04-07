@@ -108,6 +108,7 @@ type Msg
     | Save
     | AddRecipeToShoppingList String
     | RemoveRecipeFromShoppingList String
+    | SwitchLanguage String
     | UrlChanged Url
     | LinkClicked Browser.UrlRequest
 
@@ -209,6 +210,16 @@ update msg model =
                         { state | shoppingList = newShoppingList }
                     )
             , saveShoppingListCmd newShoppingList
+            )
+
+        SwitchLanguage code ->
+            ( { model
+                | language =
+                    Dict.get code Language.available
+                        |> Maybe.map .content
+                        |> Maybe.withDefault model.language
+              }
+            , saveLanguage code
             )
 
         UrlChanged url ->
@@ -326,6 +337,9 @@ saveShoppingListCmd shoppingList =
 port saveShoppingList : List String -> Cmd msg
 
 
+port saveLanguage : String -> Cmd msg
+
+
 subscriptions : Model -> Sub Msg
 subscriptions _ =
     Sub.none
@@ -382,11 +396,38 @@ viewOverview language recipeTitles =
     ( Nothing
     , Html.div []
         [ h1 [] [] [ Html.text language.title ]
-        , Html.nav [] [ navLink [] language.shoppingList.title ShoppingListRoute ]
+        , Html.nav [ css [ Css.displayFlex, Css.justifyContent Css.spaceBetween ] ]
+            [ Html.div [] [ navLink [] language.shoppingList.title ShoppingListRoute ]
+            , Html.div [] [ languagePicker language ]
+            ]
         , toolbar [ linkButton language.overview.newRecipe NewRoute ]
         , viewRecipeList language recipeTitles
         ]
     )
+
+
+languagePicker : Language -> Html Msg
+languagePicker currentLanguage =
+    Html.select
+        [ Events.onInput SwitchLanguage
+        , css [ borderStyle ]
+        ]
+        (Language.available
+            |> Dict.toList
+            |> List.map
+                (\( code, language ) ->
+                    Html.option
+                        (Attributes.value code
+                            :: (if language.content == currentLanguage then
+                                    [ Attributes.selected True ]
+
+                                else
+                                    []
+                               )
+                        )
+                        [ Html.text language.name ]
+                )
+        )
 
 
 viewRecipeList : Language -> List String -> Html Msg
