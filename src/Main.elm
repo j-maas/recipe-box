@@ -9,6 +9,7 @@ import Html.Styled as Html exposing (Html)
 import Html.Styled.Attributes as Attributes exposing (css)
 import Html.Styled.Events as Events
 import IngredientMap exposing (IngredientMap)
+import Language
 import Recipe exposing (Recipe)
 import Set exposing (Set)
 import Url exposing (Url)
@@ -29,8 +30,13 @@ main =
 type alias Model =
     { key : Navigation.Key
     , state : State
+    , language : Language
     , screen : Screen
     }
+
+
+type alias Language =
+    Language.Language (Html Msg)
 
 
 type alias State =
@@ -59,6 +65,7 @@ type alias RecipeStore =
 type alias Flags =
     { recipes : List String
     , recipesOnShoppingList : List String
+    , language : String
     }
 
 
@@ -88,6 +95,7 @@ init flags url key =
     in
     ( { key = key
       , state = state
+      , language = Language.fromString flags.language
       , screen = parseRoute url |> screenFromRoute state |> Maybe.withDefault Overview
       }
     , Cmd.none
@@ -336,19 +344,19 @@ view model =
         ( maybeSubtitle, body ) =
             case model.screen of
                 Overview ->
-                    viewOverview (Dict.keys state.recipes)
+                    viewOverview model.language (Dict.keys state.recipes)
 
                 Recipe recipe ->
-                    viewRecipe recipe
+                    viewRecipe model.language recipe
 
                 Edit { code, error } ->
-                    viewEditRecipe code error
+                    viewEditRecipe model.language code error
 
                 Shopping ->
-                    viewShoppingList state.recipes state.shoppingList
+                    viewShoppingList model.language state.recipes state.shoppingList
     in
     { title =
-        "Recipe Box"
+        model.language.title
             ++ (maybeSubtitle
                     |> Maybe.map (\subtitle -> ": " ++ subtitle)
                     |> Maybe.withDefault ""
@@ -369,22 +377,22 @@ view model =
     }
 
 
-viewOverview : List String -> ( Maybe String, Html Msg )
-viewOverview recipeTitles =
+viewOverview : Language -> List String -> ( Maybe String, Html Msg )
+viewOverview language recipeTitles =
     ( Nothing
     , Html.div []
-        [ h1 [] [] [ Html.text "Recipe Box" ]
-        , Html.nav [] [ navLink [] "Go to shopping list" ShoppingListRoute ]
-        , toolbar [ linkButton "New recipe" NewRoute ]
-        , viewRecipeList recipeTitles
+        [ h1 [] [] [ Html.text language.title ]
+        , Html.nav [] [ navLink [] language.shoppingList.title ShoppingListRoute ]
+        , toolbar [ linkButton language.overview.newRecipe NewRoute ]
+        , viewRecipeList language recipeTitles
         ]
     )
 
 
-viewRecipeList : List String -> Html Msg
-viewRecipeList recipeTitles =
+viewRecipeList : Language -> List String -> Html Msg
+viewRecipeList language recipeTitles =
     contentList
-        noRecipes
+        (noRecipes language)
         (ul
             [ recipeListStyle ]
             []
@@ -395,12 +403,9 @@ viewRecipeList recipeTitles =
         recipeTitles
 
 
-noRecipes : List (Html Msg)
-noRecipes =
-    [ Html.text "You do not have any recipes yet. Create a "
-    , navLink [] "new recipe" NewRoute
-    , Html.text "!"
-    ]
+noRecipes : Language -> List (Html Msg)
+noRecipes language =
+    language.noRecipes Html.text (\text -> navLink [] text NewRoute)
 
 
 recipeListStyle : Css.Style
@@ -439,8 +444,8 @@ recipeLinkStyle =
         ]
 
 
-viewRecipe : Recipe -> ( Maybe String, Html Msg )
-viewRecipe recipe =
+viewRecipe : Language -> Recipe -> ( Maybe String, Html Msg )
+viewRecipe language recipe =
     let
         title =
             Recipe.title recipe
@@ -450,7 +455,7 @@ viewRecipe recipe =
 
         ingredientsView =
             viewIngredientList
-                [ Html.text "No ingredients required." ]
+                [ Html.text language.recipe.noIngredientsRequired ]
                 ingredientMap
 
         stepsView =
@@ -469,10 +474,10 @@ viewRecipe recipe =
     ( Just title
     , Html.div []
         [ Html.nav []
-            [ backToOverview
+            [ backToOverview language
             , toolbar
-                [ linkButton "Edit" (EditRoute <| Recipe.title recipe)
-                , button [] "Delete" (DeleteRecipe <| Recipe.title recipe)
+                [ linkButton language.recipe.edit (EditRoute <| Recipe.title recipe)
+                , button [] language.recipe.delete (DeleteRecipe <| Recipe.title recipe)
                 ]
             ]
         , Html.article
@@ -487,12 +492,7 @@ viewRecipe recipe =
                         []
                         [ let
                             ingredientsText =
-                                case Dict.size ingredientMap of
-                                    0 ->
-                                        "Ingredients (none)"
-
-                                    n ->
-                                        "Ingredients (" ++ String.fromInt n ++ ")"
+                                language.recipe.ingredientsWithCount (Dict.size ingredientMap)
                           in
                           Html.text ingredientsText
                         ]
@@ -501,7 +501,7 @@ viewRecipe recipe =
                     [ Attributes.attribute "open" "" ]
                     [ ingredientsView
                     ]
-                :: h2 [ headingStyle ] [] [ Html.text "Steps" ]
+                :: h2 [ headingStyle ] [] [ Html.text language.recipe.steps ]
                 :: stepsView
             )
         ]
@@ -556,11 +556,11 @@ viewIngredient ( name, quantities ) =
     Html.text text
 
 
-viewEditRecipe : String -> Maybe String -> ( Maybe String, Html Msg )
-viewEditRecipe code errors =
+viewEditRecipe : Language -> String -> Maybe String -> ( Maybe String, Html Msg )
+viewEditRecipe language code errors =
     ( Nothing
     , Html.div []
-        [ Html.nav [] [ backToOverview ]
+        [ Html.nav [] [ backToOverview language ]
         , case errors of
             Just error ->
                 Html.div [] [ Html.text error ]
@@ -578,13 +578,13 @@ viewEditRecipe code errors =
                 ]
             ]
             []
-        , button [] "Save" Save
+        , button [] language.editRecipe.save Save
         ]
     )
 
 
-viewShoppingList : RecipeStore -> ShoppingList -> ( Maybe String, Html Msg )
-viewShoppingList recipes shoppingList =
+viewShoppingList : Language -> RecipeStore -> ShoppingList -> ( Maybe String, Html Msg )
+viewShoppingList language recipes shoppingList =
     ( Nothing
     , let
         selectedRecipesView =
@@ -599,15 +599,7 @@ viewShoppingList recipes shoppingList =
                     [ headingFontStyle ]
 
                 selectedRecipesText =
-                    case List.length selectedRecipes of
-                        0 ->
-                            "No selected recipes"
-
-                        1 ->
-                            "1 selected recipe"
-
-                        n ->
-                            String.fromInt n ++ " selected recipes"
+                    language.shoppingList.selectedRecipesWithCount <| List.length selectedRecipes
               in
               details
                 summaryStyles
@@ -617,10 +609,8 @@ viewShoppingList recipes shoppingList =
                 []
                 [ details
                     summaryStyles
-                    [ Html.text <|
-                        "Add recipes ("
-                            ++ String.fromInt (List.length unselectedRecipes)
-                            ++ " available)"
+                    [ Html.text
+                        (language.shoppingList.addRecipesWithCount <| List.length unselectedRecipes)
                     ]
                     [ Css.marginLeft (rem 1)
                     , Css.marginTop (rem 1)
@@ -629,27 +619,27 @@ viewShoppingList recipes shoppingList =
                     []
                     [ contentList
                         (if Dict.isEmpty recipes then
-                            noRecipes
+                            noRecipes language
 
                          else
-                            [ Html.text "You have selected all recipes." ]
+                            [ Html.text language.shoppingList.allRecipesSelected ]
                         )
                         (ul [ recipeListStyle ] [])
                         (\title ->
                             Html.li []
                                 [ viewRecipeLink title
-                                , smallButton [ Css.marginLeft (rem 0.5) ] "Add" (AddRecipeToShoppingList title)
+                                , smallButton [ Css.marginLeft (rem 0.5) ] language.shoppingList.add (AddRecipeToShoppingList title)
                                 ]
                         )
                         unselectedRecipes
                     ]
                 , contentList
-                    [ Html.text "No recipes selected." ]
+                    [ Html.text language.shoppingList.noRecipeSelected ]
                     (ul [ recipeListStyle ] [])
                     (\title ->
                         Html.li []
                             [ viewRecipeLink title
-                            , smallButton [ Css.marginLeft (rem 0.5) ] "Remove" (RemoveRecipeFromShoppingList title)
+                            , smallButton [ Css.marginLeft (rem 0.5) ] language.shoppingList.remove (RemoveRecipeFromShoppingList title)
                             ]
                     )
                     selectedRecipes
@@ -666,12 +656,12 @@ viewShoppingList recipes shoppingList =
 
         ingredientsListView =
             viewIngredientList
-                [ Html.text "Your shopping list is empty. (Select some recipes by opening the list of selected recipes.)" ]
+                [ Html.text language.shoppingList.emptyShoppingList ]
                 (IngredientMap.fromIngredients allIngredients)
       in
       Html.div []
-        ([ Html.nav [] [ backToOverview ]
-         , h1 [] [] [ Html.text "Shopping List" ]
+        ([ Html.nav [] [ backToOverview language ]
+         , h1 [] [] [ Html.text language.shoppingList.title ]
          ]
             ++ selectedRecipesView
             ++ [ ingredientsListView ]
@@ -761,10 +751,10 @@ navLink styles text route =
         [ Html.text text ]
 
 
-backToOverview : Html Msg
-backToOverview =
+backToOverview : Language -> Html Msg
+backToOverview language =
     navLink [ Css.before [ Css.property "content" "\"<< \"" ] ]
-        "Go to recipe list"
+        language.goToOverview
         OverviewRoute
 
 
