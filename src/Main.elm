@@ -498,6 +498,7 @@ viewRecipe language recipe =
             viewIngredientList
                 [ Html.text language.recipe.noIngredientsRequired ]
                 ingredientMap
+                Set.empty
 
         stepsView =
             Recipe.map
@@ -549,8 +550,8 @@ viewRecipe language recipe =
     )
 
 
-viewIngredientList : List (Html Msg) -> IngredientMap -> Html Msg
-viewIngredientList empty ingredientsMap =
+viewIngredientList : List (Html Msg) -> IngredientMap -> Set String -> Html Msg
+viewIngredientList empty ingredientsMap selected =
     let
         ingredients =
             ingredientsMap
@@ -559,9 +560,23 @@ viewIngredientList empty ingredientsMap =
     in
     contentList
         empty
-        (ul [] [])
-        (\ingredient -> Html.li [] [ viewIngredient ingredient ])
+        (ul [ Css.listStyleType Css.none, Css.paddingLeft zero ] [])
+        (\( name, quantities ) -> Html.li [] [ checkbox (viewIngredient ( name, quantities )) name selected ])
         ingredients
+
+
+checkbox : Html Msg -> String -> Set String -> Html Msg
+checkbox label value set =
+    Html.label []
+        [ Html.input
+            [ Attributes.type_ "checkbox"
+            , Attributes.value value
+            , Attributes.checked <| Set.member value set
+            , css [ Css.marginRight (rem 0.5) ]
+            ]
+            []
+        , label
+        ]
 
 
 viewIngredient : ( String, IngredientMap.Quantities ) -> Html Msg
@@ -699,6 +714,7 @@ viewShoppingList language recipes shoppingList =
             viewIngredientList
                 [ Html.text language.shoppingList.emptyShoppingList ]
                 (IngredientMap.fromIngredients allIngredients)
+                Set.empty
       in
       Html.div []
         ([ Html.nav [] [ backToOverview language ]
