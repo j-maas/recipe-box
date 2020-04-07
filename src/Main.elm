@@ -49,11 +49,7 @@ type Screen
     = Overview
     | Recipe Recipe
     | Edit { code : String, error : Maybe String }
-    | Shopping ShoppingState
-
-
-type alias ShoppingState =
-    { openSelection : Bool }
+    | Shopping
 
 
 type alias RecipeStore =
@@ -199,23 +195,8 @@ update msg model =
 
                 newShoppingList =
                     { oldShoppingList | selectedRecipes = Set.remove title oldShoppingList.selectedRecipes }
-
-                newScreen =
-                    case model.screen of
-                        Shopping shoppingState ->
-                            Shopping
-                                { shoppingState
-                                    | openSelection =
-                                        -- Because Elm does not detect closing of details due to its virtual dom,
-                                        -- this will not have the desired effect for now.
-                                        Set.isEmpty newShoppingList.selectedRecipes
-                                            || shoppingState.openSelection
-                                }
-
-                        _ ->
-                            model.screen
             in
-            ( { model | screen = newScreen }
+            ( model
                 |> updateState
                     (\state ->
                         { state | shoppingList = newShoppingList }
@@ -274,11 +255,7 @@ screenFromRoute state route =
                     )
 
         ShoppingListRoute ->
-            let
-                openSelection =
-                    Set.isEmpty state.shoppingList.selectedRecipes
-            in
-            Just <| Shopping { openSelection = openSelection }
+            Just Shopping
 
 
 stringFromRoute : Route -> String
@@ -375,8 +352,8 @@ view model =
                 Edit { code, error } ->
                     viewEditRecipe code error
 
-                Shopping shoppingState ->
-                    viewShoppingList state.recipes state.shoppingList shoppingState
+                Shopping ->
+                    viewShoppingList state.recipes state.shoppingList
     in
     { title =
         "Recipe Box"
@@ -476,10 +453,13 @@ viewRecipe recipe =
         title =
             Recipe.title recipe
 
+        ingredientMap =
+            IngredientMap.fromDescription <| Recipe.description recipe
+
         ingredientsView =
             viewIngredientList
                 [ Html.text "No ingredients required." ]
-                (IngredientMap.fromDescription <| Recipe.description recipe)
+                ingredientMap
 
         descriptionView =
             Recipe.map
@@ -513,7 +493,17 @@ viewRecipe recipe =
                         , Css.marginTop zero
                         ]
                         []
-                        [ Html.text "Ingredients" ]
+                        [ let
+                            ingredientsText =
+                                case Dict.size ingredientMap of
+                                    0 ->
+                                        "Ingredients (none)"
+
+                                    n ->
+                                        "Ingredients (" ++ String.fromInt n ++ ")"
+                          in
+                          Html.text ingredientsText
+                        ]
                     ]
                     [ Css.marginTop (rem 1) ]
                     [ Attributes.attribute "open" "" ]
@@ -601,19 +591,12 @@ viewEditRecipe code errors =
     )
 
 
-viewShoppingList : RecipeStore -> ShoppingList -> ShoppingState -> ( Maybe String, Html Msg )
-viewShoppingList recipes shoppingList state =
+viewShoppingList : RecipeStore -> ShoppingList -> ( Maybe String, Html Msg )
+viewShoppingList recipes shoppingList =
     ( Nothing
     , let
         selectedRecipesView =
             [ let
-                open =
-                    if state.openSelection then
-                        [ Attributes.attribute "open" "" ]
-
-                    else
-                        []
-
                 selectedRecipes =
                     shoppingList.selectedRecipes |> Set.toList
 
@@ -622,22 +605,36 @@ viewShoppingList recipes shoppingList state =
 
                 summaryStyles =
                     [ headingFontStyle ]
+
+                selectedRecipesText =
+                    case List.length selectedRecipes of
+                        0 ->
+                            "No selected recipes"
+
+                        1 ->
+                            "1 selected recipe"
+
+                        n ->
+                            String.fromInt n ++ " selected recipes"
               in
               details
                 summaryStyles
-                [ Html.text "Selected recipes" ]
+                [ Html.text selectedRecipesText ]
                 [ Css.margin2 (rem 1) zero
                 ]
-                open
-                [ toolbar [ smallButton [] "Remove everything" ClearShoppingList ]
-                , details
+                []
+                [ details
                     summaryStyles
-                    [ Html.text "Add recipes" ]
+                    [ Html.text <|
+                        "Add recipes ("
+                            ++ String.fromInt (List.length unselectedRecipes)
+                            ++ " available)"
+                    ]
                     [ Css.marginLeft (rem 1)
                     , Css.marginTop (rem 1)
                     , Css.marginBottom (rem 1)
                     ]
-                    open
+                    []
                     [ contentList
                         (if Dict.isEmpty recipes then
                             noRecipes
@@ -655,7 +652,7 @@ viewShoppingList recipes shoppingList state =
                         unselectedRecipes
                     ]
                 , contentList
-                    [Html.text "No recipes selected."]
+                    [ Html.text "No recipes selected." ]
                     (ul [ recipeListStyle ] [])
                     (\title ->
                         Html.li []
@@ -677,7 +674,7 @@ viewShoppingList recipes shoppingList state =
 
         ingredientsListView =
             viewIngredientList
-                [ Html.text "Your shopping list is empty. Add some recipes from the list." ]
+                [ Html.text "Your shopping list is empty. (Select some recipes by opening the list of selected recipes.)" ]
                 (IngredientMap.fromIngredients allIngredients)
       in
       Html.div []

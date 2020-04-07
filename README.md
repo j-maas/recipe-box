@@ -25,7 +25,7 @@ To build everything, run `npm run build` and deploy the `dist` folder.
   - [x] Persist shopping list.
   - [ ] Add undo after clearing items.
   - [ ] Add items to shopping list manually.
-  - [ ] Indicate number of selected and unselected recipes.
+  - [x] Indicate number of selected and unselected recipes.
 - Sharing
   - [ ] Add copy button.
   - [ ] Import and export recipes from and to files.
@@ -33,7 +33,7 @@ To build everything, run `npm run build` and deploy the `dist` folder.
 - Overview
   - [ ] Filter recipes.
 - Recipe
-  - [ ] Indicate how many ingredients there are in ingredient heading (before opening the list).
+  - [x] Indicate how many ingredients there are in ingredient heading.
   - [ ] Switch for showing/hiding quantities in description. This is helpful when assembling ingredients while cooking.
   - [ ] Highlight occurrences of ingredients on hover.
   - [ ] Allow setting portions.
