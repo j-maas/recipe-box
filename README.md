@@ -21,11 +21,12 @@ To build everything, run `npm run build` and deploy the `dist` folder.
   - [x] `<onion: 1>`, `<onion: 1; large onion>`
 - Shopping list
   - [x] Generate shopping list from multiple recipes.
-  - [ ] Allow ticking off items.
+  - [x] Allow ticking off items.
+  - [x] Persist selected items
   - [x] Persist shopping list.
-  - [ ] Add undo after clearing items.
   - [ ] Add items to shopping list manually.
   - [x] Indicate number of selected and unselected recipes.
+  - [ ] Copy button to export shopping list into other apps.
 - Sharing
   - [ ] Add copy button.
   - [ ] Import and export recipes from and to files.
