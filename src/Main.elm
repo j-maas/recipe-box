@@ -410,7 +410,7 @@ languagePicker : Language -> Html Msg
 languagePicker currentLanguage =
     Html.select
         [ Events.onInput SwitchLanguage
-        , css [ borderStyle ]
+        , css [ borderStyle, bodyFontStyle ]
         ]
         (Language.available
             |> Dict.toList
