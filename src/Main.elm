@@ -686,16 +686,27 @@ viewIngredientList empty ingredientsMap selected msg =
 
 checkbox : Html Msg -> String -> Set String -> (String -> Bool -> Msg) -> Html Msg
 checkbox label value set msg =
+    let
+        checked =
+            Set.member value set
+    in
     Html.label
         [ css
-            [ Css.display Css.inlineFlex
-            , Css.alignItems Css.center
-            ]
+            ([ Css.display Css.inlineFlex
+             , Css.alignItems Css.center
+             ]
+                ++ (if checked then
+                        [ Css.textDecoration Css.lineThrough ]
+
+                    else
+                        []
+                   )
+            )
         ]
         [ Html.input
             [ Attributes.type_ "checkbox"
             , Attributes.value value
-            , Attributes.checked <| Set.member value set
+            , Attributes.checked checked
             , Events.onCheck (msg value)
             , css [ Css.marginRight (rem 0.5) ]
             ]
@@ -774,7 +785,9 @@ viewShoppingList language recipes shoppingList =
                     shoppingList.selectedRecipes |> Set.toList
 
                 unselectedRecipes =
-                    recipes |> Dict.keys |> List.filter (\title -> not <| Set.member title shoppingList.selectedRecipes)
+                    recipes
+                        |> Dict.keys
+                        |> List.filter (\title -> not <| Set.member title shoppingList.selectedRecipes)
 
                 summaryStyles =
                     [ headingFontStyle ]
