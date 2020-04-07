@@ -119,9 +119,6 @@ type Msg
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     let
-        updateState func m =
-            { m | state = func m.state }
-
         toScreen route =
             screenFromRoute model.state route |> Maybe.withDefault model.screen
     in
@@ -130,13 +127,14 @@ update msg model =
             ( model, Cmd.none )
 
         DeleteRecipe title ->
+            let
+                state =
+                    model.state
+            in
             ( { model
                 | screen = toScreen OverviewRoute
+                , state = { state | recipes = Dict.remove title state.recipes }
               }
-                |> updateState
-                    (\state ->
-                        { state | recipes = Dict.remove title state.recipes }
-                    )
             , removeRecipe title
             )
 
@@ -158,22 +156,25 @@ update msg model =
                     case Recipe.parse code of
                         Ok recipe ->
                             let
+                                state =
+                                    model.state
+
                                 title =
                                     Recipe.title recipe
 
                                 parts =
                                     Recipe.steps recipe
                             in
-                            ( { model | screen = Recipe recipe }
-                                |> updateState
-                                    (\state ->
-                                        { state
-                                            | recipes =
-                                                Dict.insert title
-                                                    ( parts, code )
-                                                    state.recipes
-                                        }
-                                    )
+                            ( { model
+                                | screen = Recipe recipe
+                                , state =
+                                    { state
+                                        | recipes =
+                                            Dict.insert title
+                                                ( parts, code )
+                                                state.recipes
+                                    }
+                              }
                             , saveRecipe { title = title, code = code }
                             )
 
@@ -194,59 +195,66 @@ update msg model =
                 newShoppingList =
                     { oldShoppingList | selectedRecipes = Set.insert title oldShoppingList.selectedRecipes }
             in
-            ( model
-                |> updateState
-                    (\s ->
-                        { s | shoppingList = newShoppingList }
-                    )
+            ( { model
+                | state =
+                    { state
+                        | shoppingList = newShoppingList
+                    }
+              }
             , saveShoppingListCmd newShoppingList
             )
 
         RemoveRecipeFromShoppingList title ->
             let
+                state =
+                    model.state
+
                 oldShoppingList =
                     model.state.shoppingList
 
                 newShoppingList =
                     { oldShoppingList | selectedRecipes = Set.remove title oldShoppingList.selectedRecipes }
             in
-            ( model
-                |> updateState
-                    (\state ->
-                        { state | shoppingList = newShoppingList }
-                    )
+            ( { model
+                | state =
+                    { state | shoppingList = newShoppingList }
+              }
             , saveShoppingListCmd newShoppingList
             )
 
         CheckIngredientOnShoppingList name ->
             let
+                state =
+                    model.state
+
                 oldShoppingList =
                     model.state.shoppingList
 
                 newShoppingList =
                     { oldShoppingList | checked = Set.insert name oldShoppingList.checked }
             in
-            ( model
-                |> updateState
-                    (\state ->
-                        { state | shoppingList = newShoppingList }
-                    )
+            ( { model
+                | state =
+                    { state | shoppingList = newShoppingList }
+              }
             , saveShoppingListCmd newShoppingList
             )
 
         UncheckIngredientOnShoppingList name ->
             let
+                state =
+                    model.state
+
                 oldShoppingList =
                     model.state.shoppingList
 
                 newShoppingList =
                     { oldShoppingList | checked = Set.remove name oldShoppingList.checked }
             in
-            ( model
-                |> updateState
-                    (\state ->
-                        { state | shoppingList = newShoppingList }
-                    )
+            ( { model
+                | state =
+                    { state | shoppingList = newShoppingList }
+              }
             , saveShoppingListCmd newShoppingList
             )
 
