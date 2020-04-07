@@ -212,8 +212,22 @@ update msg model =
                 oldShoppingList =
                     model.state.shoppingList
 
+                newSelectedRecipes =
+                    Set.remove title oldShoppingList.selectedRecipes
+
+                newIngredients =
+                    ingredientsFromRecipes state.recipes newSelectedRecipes
+                        |> List.map Recipe.getListName
+                        |> Set.fromList
+
+                newChecked =
+                    Set.intersect newIngredients oldShoppingList.checked
+
                 newShoppingList =
-                    { oldShoppingList | selectedRecipes = Set.remove title oldShoppingList.selectedRecipes }
+                    { oldShoppingList
+                        | selectedRecipes = newSelectedRecipes
+                        , checked = newChecked
+                    }
             in
             ( { model
                 | state =
@@ -770,10 +784,7 @@ viewShoppingList language recipes shoppingList =
             ]
 
         allIngredients =
-            shoppingList.selectedRecipes
-                |> Set.toList
-                |> List.filterMap (\title -> Dict.get title recipes)
-                |> List.concatMap (\( parts, _ ) -> Recipe.ingredients parts)
+            ingredientsFromRecipes recipes shoppingList.selectedRecipes
 
         ingredientsListView =
             viewIngredientList
@@ -796,6 +807,14 @@ viewShoppingList language recipes shoppingList =
             ++ [ ingredientsListView ]
         )
     )
+
+
+ingredientsFromRecipes : RecipeStore -> Set String -> List Recipe.Ingredient
+ingredientsFromRecipes recipes selectedRecipes =
+    selectedRecipes
+        |> Set.toList
+        |> List.filterMap (\title -> Dict.get title recipes)
+        |> List.concatMap (\( parts, _ ) -> Recipe.ingredients parts)
 
 
 linkButton : String -> Route -> Html Msg
