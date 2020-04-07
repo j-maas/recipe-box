@@ -109,7 +109,7 @@ english =
 
 deutsch : Language a
 deutsch =
-    { title = "Rezeptkasten"
+    { title = "Rezeptekasten"
     , overview =
         { goToShoppingList = "Zur Einkaufsliste"
         , newRecipe = "Neues Rezept"
