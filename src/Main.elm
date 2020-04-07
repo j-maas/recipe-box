@@ -566,7 +566,12 @@ viewIngredientList empty ingredientsMap selected =
 
 checkbox : Html Msg -> String -> Set String -> Html Msg
 checkbox label value set =
-    Html.label []
+    Html.label
+        [ css
+            [ Css.display Css.inlineFlex
+            , Css.alignItems Css.center
+            ]
+        ]
         [ Html.input
             [ Attributes.type_ "checkbox"
             , Attributes.value value
