@@ -47,7 +47,7 @@ type alias State =
 
 type alias ShoppingList =
     { selectedRecipes : Set String
-    , extras : List Recipe.Ingredient
+    , checked : Set String
     }
 
 
@@ -85,7 +85,7 @@ init flags url key =
 
         shoppingList =
             { selectedRecipes = flags.recipesOnShoppingList |> Set.fromList
-            , extras = []
+            , checked = Set.empty
             }
 
         state =
@@ -103,11 +103,14 @@ init flags url key =
 
 
 type Msg
-    = DeleteRecipe String
+    = NoOp
+    | DeleteRecipe String
     | Edited String
     | Save
     | AddRecipeToShoppingList String
     | RemoveRecipeFromShoppingList String
+    | CheckIngredientOnShoppingList String
+    | UncheckIngredientOnShoppingList String
     | SwitchLanguage String
     | UrlChanged Url
     | LinkClicked Browser.UrlRequest
@@ -123,6 +126,9 @@ update msg model =
             screenFromRoute model.state route |> Maybe.withDefault model.screen
     in
     case msg of
+        NoOp ->
+            ( model, Cmd.none )
+
         DeleteRecipe title ->
             ( { model
                 | screen = toScreen OverviewRoute
@@ -203,6 +209,38 @@ update msg model =
 
                 newShoppingList =
                     { oldShoppingList | selectedRecipes = Set.remove title oldShoppingList.selectedRecipes }
+            in
+            ( model
+                |> updateState
+                    (\state ->
+                        { state | shoppingList = newShoppingList }
+                    )
+            , saveShoppingListCmd newShoppingList
+            )
+
+        CheckIngredientOnShoppingList name ->
+            let
+                oldShoppingList =
+                    model.state.shoppingList
+
+                newShoppingList =
+                    { oldShoppingList | checked = Set.insert name oldShoppingList.checked }
+            in
+            ( model
+                |> updateState
+                    (\state ->
+                        { state | shoppingList = newShoppingList }
+                    )
+            , saveShoppingListCmd newShoppingList
+            )
+
+        UncheckIngredientOnShoppingList name ->
+            let
+                oldShoppingList =
+                    model.state.shoppingList
+
+                newShoppingList =
+                    { oldShoppingList | checked = Set.remove name oldShoppingList.checked }
             in
             ( model
                 |> updateState
@@ -498,6 +536,7 @@ viewRecipe language recipe =
                 [ Html.text language.recipe.noIngredientsRequired ]
                 ingredientMap
                 Set.empty
+                (\_ _ -> NoOp)
 
         stepsView =
             Recipe.map
@@ -549,8 +588,8 @@ viewRecipe language recipe =
     )
 
 
-viewIngredientList : List (Html Msg) -> IngredientMap -> Set String -> Html Msg
-viewIngredientList empty ingredientsMap selected =
+viewIngredientList : List (Html Msg) -> IngredientMap -> Set String -> (String -> Bool -> Msg) -> Html Msg
+viewIngredientList empty ingredientsMap selected msg =
     let
         ingredients =
             ingredientsMap
@@ -560,12 +599,12 @@ viewIngredientList empty ingredientsMap selected =
     contentList
         empty
         (ul [ Css.listStyleType Css.none, Css.paddingLeft zero ] [])
-        (\( name, quantities ) -> Html.li [] [ checkbox (viewIngredient ( name, quantities )) name selected ])
+        (\( name, quantities ) -> Html.li [] [ checkbox (viewIngredient ( name, quantities )) name selected msg ])
         ingredients
 
 
-checkbox : Html Msg -> String -> Set String -> Html Msg
-checkbox label value set =
+checkbox : Html Msg -> String -> Set String -> (String -> Bool -> Msg) -> Html Msg
+checkbox label value set msg =
     Html.label
         [ css
             [ Css.display Css.inlineFlex
@@ -576,6 +615,7 @@ checkbox label value set =
             [ Attributes.type_ "checkbox"
             , Attributes.value value
             , Attributes.checked <| Set.member value set
+            , Events.onCheck (msg value)
             , css [ Css.marginRight (rem 0.5) ]
             ]
             []
@@ -707,18 +747,23 @@ viewShoppingList language recipes shoppingList =
             ]
 
         allIngredients =
-            (shoppingList.selectedRecipes
+            shoppingList.selectedRecipes
                 |> Set.toList
                 |> List.filterMap (\title -> Dict.get title recipes)
                 |> List.concatMap (\( parts, _ ) -> Recipe.ingredients parts)
-            )
-                ++ shoppingList.extras
 
         ingredientsListView =
             viewIngredientList
                 [ Html.text language.shoppingList.emptyShoppingList ]
                 (IngredientMap.fromIngredients allIngredients)
-                Set.empty
+                shoppingList.checked
+                (\name checked ->
+                    if checked then
+                        CheckIngredientOnShoppingList name
+
+                    else
+                        UncheckIngredientOnShoppingList name
+                )
       in
       Html.div []
         ([ Html.nav [] [ backToOverview language ]
