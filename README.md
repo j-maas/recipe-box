@@ -46,3 +46,4 @@ To build everything, run `npm run build` and deploy the `dist` folder.
   - [ ] Improve error messages.
   - [ ] Allow named sections representing steps that have individual ingredient lists for preparation.
 - [ ] Fix highlight on real button differing from link button.
+- [ ] Host fonts, instead of fetching them from Google.
