@@ -415,7 +415,7 @@ viewOverview recipeTitles =
 viewRecipeList : List String -> Html Msg
 viewRecipeList recipeTitles =
     contentList
-        (Html.div [] noRecipes)
+        noRecipes
         (ul
             [ recipeListStyle ]
             []
@@ -461,8 +461,11 @@ recipeLinkStyle =
         , linkUnstyle
         , Css.display Css.inlineBlock
         , Css.padding (rem 0.5)
+        , borderStyle
+        , Css.borderColor Css.transparent
         , onHover
             [ Css.backgroundColor (Css.hsla 0 0 0.5 0.1)
+            , Css.textDecoration Css.underline
             ]
         ]
 
@@ -474,7 +477,9 @@ viewRecipe recipe =
             Recipe.title recipe
 
         ingredientsView =
-            viewIngredientsList (IngredientMap.fromDescription (Recipe.description recipe))
+            viewIngredientList
+                [ Html.text "No ingredients required." ]
+                (IngredientMap.fromDescription <| Recipe.description recipe)
 
         descriptionView =
             Recipe.map
@@ -521,8 +526,8 @@ viewRecipe recipe =
     )
 
 
-viewIngredientsList : IngredientMap -> Html Msg
-viewIngredientsList ingredientsMap =
+viewIngredientList : List (Html Msg) -> IngredientMap -> Html Msg
+viewIngredientList empty ingredientsMap =
     let
         ingredients =
             ingredientsMap
@@ -530,40 +535,43 @@ viewIngredientsList ingredientsMap =
                 |> List.sortBy (\( name, _ ) -> name)
     in
     contentList
-        (Html.text "No ingredients required.")
+        empty
         (ul [] [])
-        (\( name, quantities ) ->
-            let
-                descriptions =
-                    quantities.descriptions
-
-                amount =
-                    Maybe.map (\a -> [ String.fromFloat a ]) quantities.amount
-                        |> Maybe.withDefault []
-
-                measures =
-                    Dict.toList quantities.measures
-                        |> List.map
-                            (\( unit, unitAmount ) ->
-                                String.fromFloat unitAmount ++ " " ++ unit
-                            )
-
-                quantitiesTexts =
-                    measures ++ descriptions ++ amount
-
-                quantitiesText =
-                    if List.isEmpty quantitiesTexts then
-                        ""
-
-                    else
-                        " (" ++ String.join " + " quantitiesTexts ++ ")"
-
-                text =
-                    name ++ quantitiesText
-            in
-            Html.li [] [ Html.text text ]
-        )
+        (\ingredient -> Html.li [] [ viewIngredient ingredient ])
         ingredients
+
+
+viewIngredient : ( String, IngredientMap.Quantities ) -> Html Msg
+viewIngredient ( name, quantities ) =
+    let
+        descriptions =
+            quantities.descriptions
+
+        amount =
+            Maybe.map (\a -> [ String.fromFloat a ]) quantities.amount
+                |> Maybe.withDefault []
+
+        measures =
+            Dict.toList quantities.measures
+                |> List.map
+                    (\( unit, unitAmount ) ->
+                        String.fromFloat unitAmount ++ " " ++ unit
+                    )
+
+        quantitiesTexts =
+            measures ++ descriptions ++ amount
+
+        quantitiesText =
+            if List.isEmpty quantitiesTexts then
+                ""
+
+            else
+                " (" ++ String.join " + " quantitiesTexts ++ ")"
+
+        text =
+            name ++ quantitiesText
+    in
+    Html.text text
 
 
 viewEditRecipe : String -> Maybe String -> ( Maybe String, Html Msg )
@@ -631,29 +639,28 @@ viewShoppingList recipes shoppingList state =
                     ]
                     open
                     [ contentList
-                        (Html.div [] <|
-                            if Dict.isEmpty recipes then
-                                noRecipes
+                        (if Dict.isEmpty recipes then
+                            noRecipes
 
-                            else
-                                [ Html.text "You have selected all recipes." ]
+                         else
+                            [ Html.text "You have selected all recipes." ]
                         )
                         (ul [ recipeListStyle ] [])
                         (\title ->
                             Html.li []
                                 [ viewRecipeLink title
-                                , smallButton [] "Add" (AddRecipeToShoppingList title)
+                                , smallButton [ Css.marginLeft (rem 0.5) ] "Add" (AddRecipeToShoppingList title)
                                 ]
                         )
                         unselectedRecipes
                     ]
                 , contentList
-                    (Html.text "No recipes selected.")
+                    [Html.text "No recipes selected."]
                     (ul [ recipeListStyle ] [])
                     (\title ->
                         Html.li []
                             [ viewRecipeLink title
-                            , smallButton [] "Remove" (RemoveRecipeFromShoppingList title)
+                            , smallButton [ Css.marginLeft (rem 0.5) ] "Remove" (RemoveRecipeFromShoppingList title)
                             ]
                     )
                     selectedRecipes
@@ -668,24 +675,17 @@ viewShoppingList recipes shoppingList state =
             )
                 ++ shoppingList.extras
 
-        ingredientsMap =
-            IngredientMap.fromIngredients allIngredients
-
         ingredientsListView =
-            if List.isEmpty allIngredients then
-                [ Html.text "Your shopping list is empty. Add some recipes from the list."
-                ]
-
-            else
-                [ viewIngredientsList ingredientsMap
-                ]
+            viewIngredientList
+                [ Html.text "Your shopping list is empty. Add some recipes from the list." ]
+                (IngredientMap.fromIngredients allIngredients)
       in
       Html.div []
         ([ Html.nav [] [ backToOverview ]
          , h1 [] [] [ Html.text "Shopping List" ]
          ]
             ++ selectedRecipesView
-            ++ ingredientsListView
+            ++ [ ingredientsListView ]
         )
     )
 
@@ -775,14 +775,14 @@ navLink styles text route =
 backToOverview : Html Msg
 backToOverview =
     navLink [ Css.before [ Css.property "content" "\"<< \"" ] ]
-        "Go back to recipe list"
+        "Go to recipe list"
         OverviewRoute
 
 
-contentList : Html Msg -> (List (Html Msg) -> Html Msg) -> (a -> Html Msg) -> List a -> Html Msg
+contentList : List (Html Msg) -> (List (Html Msg) -> Html Msg) -> (a -> Html Msg) -> List a -> Html Msg
 contentList empty list itemFunc items =
     if List.isEmpty items then
-        Html.span [ css [ Css.fontStyle Css.italic ] ] [ empty ]
+        Html.span [ css [ Css.fontStyle Css.italic ] ] empty
 
     else
         list (List.map itemFunc items)
@@ -865,7 +865,7 @@ styledNode tag styles attributes children =
 buttonStyle : Css.Style
 buttonStyle =
     Css.batch
-        [ borderStyle
+        [ framedStyle
         , clickableStyle
         , Css.boxShadow4 zero (rem 0.1) (rem 0.1) (Css.hsla 0 0 0 0.3)
         , onHover
@@ -895,11 +895,18 @@ linkUnstyle =
         ]
 
 
+framedStyle : Css.Style
+framedStyle =
+    Css.batch
+        [ Css.padding2 (rem 0.5) (rem 1)
+        , borderStyle
+        ]
+
+
 borderStyle : Css.Style
 borderStyle =
     Css.batch
-        [ Css.padding2 (rem 0.5) (rem 1)
-        , Css.borderRadius (rem 0.3)
+        [ Css.borderRadius (rem 0.3)
         , Css.border3 (rem 0.1) Css.solid (Css.hsl 0 0 0)
         , Css.backgroundColor Css.transparent
         ]

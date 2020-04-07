@@ -1,4 +1,4 @@
-module IngredientMap exposing (IngredientMap, fromDescription, fromIngredients, fromList)
+module IngredientMap exposing (IngredientMap, fromDescription, fromIngredients, fromList, Quantities)
 
 import Dict exposing (Dict)
 import Recipe exposing (Ingredient, Quantity)
