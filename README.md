@@ -42,6 +42,7 @@ To build everything, run `npm run build` and deploy the `dist` folder.
   - [ ] Allow setting portions.
   - [ ] Embed timers.
   - [ ] Instead of brute deletion, have a bin to protect against accidental deletion.
+  - [ ] Add print style removing UI elements.
 - Editing
   - [ ] Add instructions to edit page, explaining the syntax.
   - [ ] Detect when recipe already exists and offer renaming.

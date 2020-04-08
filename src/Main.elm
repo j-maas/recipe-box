@@ -672,23 +672,27 @@ viewRecipe language recipe recipeChecks =
             []
             (h1 [] [] [ Html.text <| Recipe.title recipe ]
                 :: details
-                    []
-                    [ h2
-                        [ Css.display Css.inlineBlock
-                        , Css.marginTop zero
-                        ]
-                        []
-                        [ let
-                            ingredientsText =
-                                language.recipe.ingredients
-                          in
-                          Html.text ingredientsText
-                        ]
-                    ]
                     [ Css.marginTop (rem 1) ]
                     [ Attributes.attribute "open" "" ]
-                    [ ingredientsView
-                    ]
+                    { summary =
+                        ( []
+                        , [ h2
+                                [ Css.display Css.inlineBlock
+                                , Css.marginTop zero
+                                ]
+                                []
+                                [ let
+                                    ingredientsText =
+                                        language.recipe.ingredients
+                                  in
+                                  Html.text ingredientsText
+                                ]
+                          ]
+                        )
+                    , children =
+                        [ ingredientsView
+                        ]
+                    }
                 :: h2 [ headingStyle ] [] [ Html.text language.recipe.method ]
                 :: stepsView
             )
@@ -823,48 +827,56 @@ viewShoppingList language recipes shoppingList =
                     language.shoppingList.selectedRecipesWithCount <| List.length selectedRecipes
               in
               details
-                summaryStyles
-                [ Html.text selectedRecipesText ]
                 [ Css.margin2 (rem 1) zero
                 ]
                 []
-                [ details
-                    summaryStyles
-                    [ Html.text
-                        (language.shoppingList.addRecipesWithCount <| List.length unselectedRecipes)
-                    ]
-                    [ Css.marginLeft (rem 0.5)
-                    , Css.marginTop (rem 1)
-                    , Css.marginBottom (rem 1)
-                    ]
-                    []
-                    [ contentList
-                        (if Dict.isEmpty recipes then
-                            noRecipes language
+                { summary =
+                    ( summaryStyles
+                    , [ Html.text selectedRecipesText ]
+                    )
+                , children =
+                    [ details
+                        [ Css.marginLeft (rem 0.5)
+                        , Css.marginTop (rem 1)
+                        , Css.marginBottom (rem 1)
+                        ]
+                        []
+                        { summary =
+                            ( summaryStyles
+                            , [ Html.text
+                                    (language.shoppingList.addRecipesWithCount <| List.length unselectedRecipes)
+                              ]
+                            )
+                        , children =
+                            [ contentList
+                                (if Dict.isEmpty recipes then
+                                    noRecipes language
 
-                         else
-                            [ Html.text language.shoppingList.allRecipesSelected ]
-                        )
+                                 else
+                                    [ Html.text language.shoppingList.allRecipesSelected ]
+                                )
+                                (ul [ recipeListStyle ] [])
+                                (\title ->
+                                    Html.li []
+                                        [ viewRecipeLink title
+                                        , smallButton [ Css.marginLeft (rem 0.5) ] language.shoppingList.add (AddRecipeToShoppingList title)
+                                        ]
+                                )
+                                unselectedRecipes
+                            ]
+                        }
+                    , contentList
+                        [ Html.text language.shoppingList.noRecipeSelected ]
                         (ul [ recipeListStyle ] [])
                         (\title ->
                             Html.li []
                                 [ viewRecipeLink title
-                                , smallButton [ Css.marginLeft (rem 0.5) ] language.shoppingList.add (AddRecipeToShoppingList title)
+                                , smallButton [ Css.marginLeft (rem 0.5) ] language.shoppingList.remove (RemoveRecipeFromShoppingList title)
                                 ]
                         )
-                        unselectedRecipes
+                        selectedRecipes
                     ]
-                , contentList
-                    [ Html.text language.shoppingList.noRecipeSelected ]
-                    (ul [ recipeListStyle ] [])
-                    (\title ->
-                        Html.li []
-                            [ viewRecipeLink title
-                            , smallButton [ Css.marginLeft (rem 0.5) ] language.shoppingList.remove (RemoveRecipeFromShoppingList title)
-                            ]
-                    )
-                    selectedRecipes
-                ]
+                }
             ]
 
         allIngredients =
@@ -993,15 +1005,28 @@ contentList empty list itemFunc items =
         list (List.map itemFunc items)
 
 
-details : List Css.Style -> List (Html Msg) -> List Css.Style -> List (Html.Attribute Msg) -> List (Html Msg) -> Html Msg
-details summaryStyles summary styles attributes children =
+details :
+    List Css.Style
+    -> List (Html.Attribute Msg)
+    ->
+        { summary : ( List Css.Style, List (Html Msg) )
+        , children : List (Html Msg)
+        }
+    -> Html Msg
+details styles attributes options =
+    let
+        ( summaryStyles, summary ) =
+            options.summary
+    in
     styledNode
         Html.details
         (detailsStyle
             :: styles
         )
         attributes
-        (Html.summary [ css <| [ clickableStyle ] ++ summaryStyles ] summary :: children)
+        (Html.summary [ css <| [ clickableStyle ] ++ summaryStyles ] summary
+            :: options.children
+        )
 
 
 ul : List Css.Style -> List (Html.Attribute Msg) -> List (Html Msg) -> Html Msg
