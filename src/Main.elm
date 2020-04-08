@@ -726,15 +726,14 @@ viewRecipe language recipe maybeChecks =
                           ]
                         )
                     , children =
-                         ingredientsView
-                        
+                        ingredientsView
                             :: (if Set.isEmpty checks then
                                     []
 
                                 else
                                     [ toolbar
                                         [ smallButton []
-                                            language.clear
+                                            language.clearChecks
                                             (ClearRecipeChecks title)
                                         ]
                                     ]
@@ -940,7 +939,7 @@ viewShoppingList language recipes shoppingList =
         ([ Html.nav []
             [ backToOverview language
             , toolbar
-                [ smallButton [] language.clear ClearShoppingList
+                [ button [] language.clearChecks ClearShoppingList
                 ]
             ]
          , h1 [] [] [ Html.text language.shoppingList.title ]
@@ -1154,7 +1153,7 @@ buttonStyle =
             [ Css.backgroundColor (Css.hsla 0 0 0.5 0.1)
             , Css.boxShadow4 zero (rem 0.1) (rem 0.2) (Css.hsla 0 0 0 0.3)
             ]
-        , headingFontStyle
+            , bodyFontStyle
         , Css.fontSize (rem 1)
         , linkUnstyle
         ]
@@ -1189,7 +1188,7 @@ borderStyle : Css.Style
 borderStyle =
     Css.batch
         [ Css.borderRadius (rem 0.3)
-        , Css.border3 (rem 0.1) Css.solid (Css.hsl 0 0 0)
+        , Css.border3 (rem 0.075) Css.solid (Css.hsl 0 0 0)
         , Css.backgroundColor Css.transparent
         ]
 
