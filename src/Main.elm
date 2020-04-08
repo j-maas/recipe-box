@@ -627,7 +627,27 @@ viewRecipe language recipe recipeChecks =
                             Html.text text
 
                         Recipe.IngredientPart ingredient ->
-                            Html.text (Recipe.getText ingredient)
+                            let
+                                quantityText =
+                                    case Recipe.getQuantity ingredient of
+                                        Just quantity ->
+                                            " ("
+                                                ++ (case quantity of
+                                                        Recipe.Description description ->
+                                                            description
+
+                                                        Recipe.Amount amount ->
+                                                            String.fromFloat amount
+
+                                                        Recipe.Measure amount unit ->
+                                                            String.fromFloat amount ++ " " ++ unit
+                                                   )
+                                                ++ ")"
+
+                                        Nothing ->
+                                            ""
+                            in
+                            Html.text (Recipe.getText ingredient ++ quantityText)
                 )
                 recipe
                 |> List.map (\paragraph -> p [] [] paragraph)
