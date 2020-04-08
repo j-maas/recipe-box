@@ -18,56 +18,84 @@
     <div id="elm"></div>
     <script>
         var recipes = [];
+        var recipeChecks = [];
+        var recipePrefix = "recipe:"
+        var checksPrefix = "recipeChecks:"
         for (var i = 0; i < localStorage.length; i++) {
             var key = localStorage.key(i);
-            if (key.startsWith("recipe:")) {
+            if (key.startsWith(recipePrefix)) {
                 recipes.push(localStorage.getItem(key));
+            } else if (key.startsWith(checksPrefix)) {
+                var title = key.slice(checksPrefix.length);
+                recipeChecks.push([title, JSON.parse(localStorage.getItem(key))]);
             }
         }
-        console.info("Loaded " + recipes.length + " recipes.")
+        console.info("Loaded " + recipes.length + " recipes.");
+        console.info("Loaded check marks for " + recipeChecks.length + " recipes.");
 
         var shoppingListKey = "shoppingList";
-        function getRecipesOnShoppingList() {
-            return JSON.parse(localStorage.getItem(shoppingListKey)) || [];
+        function getShoppingList() {
+            return JSON.parse(localStorage.getItem(shoppingListKey)) || {
+                selectedRecipes: [],
+                checked: [],
+            };
         }
 
-        var recipesOnShoppingList = getRecipesOnShoppingList();
-        console.info("Loaded shopping list with " + recipesOnShoppingList.length + " recipes selected.")
+        var shoppingList = getShoppingList();
+        function logShoppingList(sl) {
+            return "shopping list with "
+                + sl.selectedRecipes.length
+                + " recipes selected and "
+                + sl.checked.length
+                + " items checked";
+        }
+        console.info("Loaded " + logShoppingList(shoppingList) + ".")
 
         var languageKey = "languageSelection"
         var selectedLanguage = localStorage.getItem(languageKey);
         var language = selectedLanguage || navigator.language;
         if (selectedLanguage) {
             console.info("Loaded language preference of '" + selectedLanguage + "'.");
+        } else {
+            console.info("No language preference found. Guessing language based on browser language and choosing '" + language + "'.");
         }
-        console.info("Setting language to '" + language + "'.");
 
         var app = Elm.Main.init({
             node: document.getElementById('elm'),
             flags: {
                 recipes,
-                recipesOnShoppingList,
+                recipeChecks,
+                shoppingList,
                 language,
             }
         });
 
         function saveRecipe(title, code) {
             console.info("Saving recipe with title '" + title + "'.")
-            localStorage.setItem(keyFromTitle(title), code);
+            localStorage.setItem(recipeKeyFromTitle(title), code);
         }
 
         function removeRecipe(title) {
             console.info("Removing recipe with title '" + title + "'.")
-            localStorage.removeItem(keyFromTitle(title));
+            localStorage.removeItem(recipeKeyFromTitle(title));
         }
 
-        function keyFromTitle(title) {
-            return "recipe:" + title;
+        function recipeKeyFromTitle(title) {
+            return recipePrefix + title;
         }
 
-        function saveShoppingList(recipes) {
-            console.info("Storing shopping list with " + recipes.length + " recipes selected.");
-            localStorage.setItem(shoppingListKey, JSON.stringify(recipes));
+        function saveRecipeChecks(title, checks) {
+            console.info("Saving " + checks.length + " check marks for recipe with title '" + title + "'.");
+            localStorage.setItem(checksKeyFromTitle(title), JSON.stringify(checks));
+        }
+
+        function checksKeyFromTitle(title) {
+            return checksPrefix + title;
+        }
+
+        function saveShoppingList(shoppingList) {
+            console.info("Saved " + logShoppingList(shoppingList) + ".")
+            localStorage.setItem(shoppingListKey, JSON.stringify(shoppingList));
         }
 
         function saveLanguage(code) {
@@ -81,8 +109,11 @@
         app.ports.removeRecipe.subscribe(function (title) {
             removeRecipe(title);
         });
-        app.ports.saveShoppingList.subscribe(function (recipes) {
-            saveShoppingList(recipes);
+        app.ports.saveRecipeChecks.subscribe(function (data) {
+            saveRecipeChecks(data.title, data.checks);
+        });
+        app.ports.saveShoppingList.subscribe(function (shoppingList) {
+            saveShoppingList(shoppingList);
         });
         app.ports.saveLanguage.subscribe(function (code) {
             saveLanguage(code);
