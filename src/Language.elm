@@ -60,39 +60,28 @@ deadEndHelper deadEnd =
     let
         contextStack =
             deadEnd.contextStack |> List.map .context
-    in
-    if List.member Title contextStack then
-        TitleDeadEnd deadEnd.problem
 
-    else
-        ProblemDeadEnd deadEnd.problem
+        lastContext =
+            List.head contextStack
+    in
+    case lastContext of
+        Just TitleContext ->
+            TitleDeadEnd deadEnd.problem
+
+        Just IngredientContext ->
+            IngredientDeadEnd Nothing deadEnd.problem
+
+        Just (IngredientNameContext name) ->
+            IngredientDeadEnd (Just name) deadEnd.problem
+
+        _ ->
+            ProblemDeadEnd deadEnd.problem
 
 
 type LanguageDeadEnd
     = TitleDeadEnd Problem
+    | IngredientDeadEnd (Maybe String) Problem
     | ProblemDeadEnd Problem
-
-
-explainProblem : Problem -> String
-explainProblem problem =
-    case problem of
-        Expecting char ->
-            "A '" ++ char ++ "' is missing."
-
-        ExpectingLineBreak ->
-            "A line break is missing."
-
-        ExpectingEnd ->
-            "There is too much text."
-
-        ExpectingFloat ->
-            "A number is missing."
-
-        InvalidNumber ->
-            "The number is not valid."
-
-        EmptyText ->
-            "I was expecting some text."
 
 
 english : Language a
@@ -158,7 +147,19 @@ explainDeadEndInEnglish : DeadEnd -> String
 explainDeadEndInEnglish deadEnd =
     case deadEndHelper deadEnd of
         TitleDeadEnd problem ->
-            "The recipe must start with a title that is marked with a '#'. But I had a problem:\n" ++ explainProblemInEnglish problem
+            "The recipe must start with a '# title', but I had a problem:\n" ++ explainProblemInEnglish problem
+
+        IngredientDeadEnd maybeName problem ->
+            "I found an '<ingredient>'"
+                ++ (case maybeName of
+                        Just name ->
+                            " called '" ++ name ++ "'"
+
+                        Nothing ->
+                            ""
+                                ++ ", but I ran into a problem:\n"
+                                ++ explainProblemInEnglish problem
+                   )
 
         ProblemDeadEnd problem ->
             explainProblemInEnglish problem
@@ -247,7 +248,19 @@ explainDeadEndInDeutsch : DeadEnd -> String
 explainDeadEndInDeutsch deadEnd =
     case deadEndHelper deadEnd of
         TitleDeadEnd problem ->
-            "Das Rezept muss mit einem Titel beginnen, der mit '#' gekennzeichnet wird. Aber es gab ein Problem:\n" ++ explainProblemInDeutsch problem
+            "Das Rezept muss mit einem '# Titel' beginnen, aber es gab ein Problem:\n" ++ explainProblemInDeutsch problem
+
+        IngredientDeadEnd maybeName problem ->
+            "Ich habe eine 'Zutat'"
+                ++ (case maybeName of
+                        Just name ->
+                            " namens '" ++ name ++ "'"
+
+                        Nothing ->
+                            ""
+                   )
+                ++ " gefunden, aber es gab ein Problem:\n"
+                ++ explainProblemInDeutsch problem
 
         ProblemDeadEnd problem ->
             explainProblemInDeutsch problem

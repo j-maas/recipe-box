@@ -15,14 +15,14 @@ suite =
                 RecipeParser.parse "# The most amazing dish in the world"
                     |> Result.map Recipe.title
                     |> Expect.equal (Ok "The most amazing dish in the world")
-        , test "rejects empty title" <|
+        , test "reports empty title" <|
             \_ ->
                 RecipeParser.parse "#"
                     |> Result.map Recipe.title
                     |> simplifyFailure
                     |> Expect.equal
                         (Err
-                            [ SimpleDeadEnd EmptyText [ Title ]
+                            [ SimpleDeadEnd EmptyText [ TitleContext ]
                             ]
                         )
         , test "no ingredients" <|
@@ -155,6 +155,16 @@ suite =
                                   , PlainPart "."
                                   ]
                                 ]
+                        )
+        , test "reports ingredient without closing bracket" <|
+            \_ ->
+                RecipeParser.parse "# Unclosed\nI am a <runaway ingredient"
+                    |> Result.map Recipe.title
+                    |> simplifyFailure
+                    |> Expect.equal
+                        (Err
+                            [ SimpleDeadEnd (Expecting ">") [ IngredientNameContext "runaway ingredient", IngredientContext ]
+                            ]
                         )
         ]
 

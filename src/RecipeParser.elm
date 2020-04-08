@@ -16,7 +16,9 @@ type alias Failure =
 
 
 type Context
-    = Title
+    = TitleContext
+    | IngredientContext
+    | IngredientNameContext String
 
 
 type alias Parser a =
@@ -39,7 +41,7 @@ parseRecipe =
         (\title method ->
             Recipe.from title method
         )
-        |= Parser.inContext Title
+        |= Parser.inContext TitleContext
             (Parser.succeed String.trim
                 |. Parser.symbol (s "#")
                 |. chompSpaces
@@ -97,29 +99,38 @@ parsePlain endChars =
 
 parseIngredient : Parser Recipe.Part
 parseIngredient =
-    Parser.succeed
-        (\text maybeQuantity maybeListName ->
-            IngredientPart
-                (Ingredient.from
-                    (String.trim text)
-                    maybeQuantity
-                    maybeListName
-                )
+    Parser.inContext IngredientContext
+        (Parser.succeed
+            (\( title, maybeQuantity, maybeListText ) ->
+                IngredientPart
+                    (Ingredient.from
+                        title
+                        maybeQuantity
+                        maybeListText
+                    )
+            )
+            |= (Parser.succeed String.trim
+                    |. Parser.symbol (s "<")
+                    |= parseUntil (Set.fromList [ ':', ';', '>' ])
+                    |> Parser.andThen
+                        (\title ->
+                            Parser.inContext (IngredientNameContext title) <|
+                                Parser.succeed (\maybeQuantity maybeListText -> ( title, maybeQuantity, maybeListText ))
+                                    |= parseOptional
+                                        (Parser.succeed identity
+                                            |. Parser.symbol (s ":")
+                                            |. chompSpaces
+                                            |= parseQuantity (Set.fromList [ ';', '>' ])
+                                        )
+                                    |= parseOptional
+                                        (Parser.succeed String.trim
+                                            |. Parser.symbol (s ";")
+                                            |= parseUntil (Set.fromList [ '>' ])
+                                        )
+                                    |. Parser.symbol (s ">")
+                        )
+               )
         )
-        |. Parser.symbol (s "<")
-        |= parseUntil (Set.fromList [ ':', ';', '>' ])
-        |= parseOptional
-            (Parser.succeed identity
-                |. Parser.symbol (s ":")
-                |. chompSpaces
-                |= parseQuantity (Set.fromList [ ';', '>' ])
-            )
-        |= parseOptional
-            (Parser.succeed String.trim
-                |. Parser.symbol (s ";")
-                |= parseUntil (Set.fromList [ '>' ])
-            )
-        |. Parser.symbol (s ">")
 
 
 parseQuantity : Set Char -> Parser Quantity
