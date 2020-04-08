@@ -760,7 +760,7 @@ viewIngredientList empty ingredientsMap selected msg =
         ingredients =
             ingredientsMap
                 |> Dict.toList
-                |> List.sortBy (\( name, _ ) -> name)
+                |> List.sortBy (\( name, _ ) -> String.toLower name)
     in
     contentList
         empty
