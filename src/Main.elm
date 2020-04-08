@@ -128,6 +128,9 @@ update msg model =
     let
         toScreen route =
             screenFromRoute model.state route |> Maybe.withDefault model.screen
+
+        goTo route =
+            Navigation.pushUrl model.key (stringFromRoute route)
     in
     case msg of
         NoOp ->
@@ -139,10 +142,12 @@ update msg model =
                     model.state
             in
             ( { model
-                | screen = toScreen OverviewRoute
-                , state = { state | recipes = Dict.remove title state.recipes }
+                | state = { state | recipes = Dict.remove title state.recipes }
               }
-            , removeRecipe title
+            , Cmd.batch
+                [ removeRecipe title
+                , goTo OverviewRoute
+                ]
             )
 
         Edited code ->
@@ -173,8 +178,7 @@ update msg model =
                                     Recipe.steps recipe
                             in
                             ( { model
-                                | screen = Recipe recipe
-                                , state =
+                                | state =
                                     { state
                                         | recipes =
                                             Dict.insert title
@@ -182,7 +186,10 @@ update msg model =
                                                 state.recipes
                                     }
                               }
-                            , saveRecipe { title = title, code = code }
+                            , Cmd.batch
+                                [ saveRecipe { title = title, code = code }
+                                , goTo (RecipeRoute title)
+                                ]
                             )
 
                         Err error ->
