@@ -556,7 +556,7 @@ viewOverview language recipeTitles =
     , Html.div []
         [ h1 [] [] [ Html.text language.title ]
         , Html.nav [ css [ Css.displayFlex, Css.justifyContent Css.spaceBetween ] ]
-            [ Html.div [] [ navLink [] language.shoppingList.title ShoppingListRoute ]
+            [ Html.div [] [ navLink [] language.overview.goToShoppingList ShoppingListRoute ]
             , Html.div [] [ languagePicker language ]
             ]
         , toolbar [ linkButton language.overview.newRecipe NewRoute ]
@@ -1153,7 +1153,7 @@ buttonStyle =
             [ Css.backgroundColor (Css.hsla 0 0 0.5 0.1)
             , Css.boxShadow4 zero (rem 0.1) (rem 0.2) (Css.hsla 0 0 0 0.3)
             ]
-            , bodyFontStyle
+        , bodyFontStyle
         , Css.fontSize (rem 1)
         , linkUnstyle
         ]
