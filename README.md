@@ -43,11 +43,13 @@ To build everything, run `npm run build` and deploy the `dist` folder.
   - [ ] Embed timers.
   - [ ] Instead of brute deletion, have a bin to protect against accidental deletion.
   - [ ] Add print style removing UI elements.
+  - [ ] Delete checks when deleting recipe.
 - Editing
   - [ ] Add instructions to edit page, explaining the syntax.
   - [ ] Detect when recipe already exists and offer renaming.
 - Syntax
   - [ ] Improve error messages.
+  - [ ] Highlight errors in textarea. (See https://codersblock.com/blog/highlight-text-inside-a-textarea/)
   - [ ] Allow named sections representing steps that have individual ingredient lists for preparation.
 - [ ] Fix highlight on real button differing from link button.
 - [ ] Host fonts, instead of fetching them from Google.
