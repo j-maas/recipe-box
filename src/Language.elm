@@ -12,9 +12,9 @@ type alias Language a =
     , recipe :
         { edit : String
         , delete : String
-        , ingredientsWithCount : Int -> String
+        , ingredients : String
         , noIngredientsRequired : String
-        , steps : String
+        , method : String
         }
     , editRecipe :
         { save : String
@@ -61,16 +61,9 @@ english =
     , recipe =
         { edit = "Edit"
         , delete = "Delete"
-        , ingredientsWithCount =
-            \count ->
-                case count of
-                    0 ->
-                        "Ingredients (none)"
-
-                    n ->
-                        "Ingredients (" ++ String.fromInt n ++ ")"
+        , ingredients = "Ingredients"
         , noIngredientsRequired = "No ingredients required."
-        , steps = "Steps"
+        , method = "Method"
         }
     , editRecipe =
         { save = "Save"
@@ -117,16 +110,9 @@ deutsch =
     , recipe =
         { edit = "Bearbeiten"
         , delete = "Löschen"
-        , ingredientsWithCount =
-            \count ->
-                case count of
-                    0 ->
-                        "Zutaten (keine)"
-
-                    n ->
-                        "Zutaten (" ++ String.fromInt n ++ ")"
+        , ingredients = "Zutaten"
         , noIngredientsRequired = "Keine Zutaten nötig."
-        , steps = "Zubereitung"
+        , method = "Zubereitung"
         }
     , editRecipe =
         { save = "Speichern"

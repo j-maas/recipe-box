@@ -673,7 +673,7 @@ viewRecipe language recipe recipeChecks =
                         []
                         [ let
                             ingredientsText =
-                                language.recipe.ingredientsWithCount (Dict.size ingredientMap)
+                                language.recipe.ingredients
                           in
                           Html.text ingredientsText
                         ]
@@ -682,7 +682,7 @@ viewRecipe language recipe recipeChecks =
                     [ Attributes.attribute "open" "" ]
                     [ ingredientsView
                     ]
-                :: h2 [ headingStyle ] [] [ Html.text language.recipe.steps ]
+                :: h2 [ headingStyle ] [] [ Html.text language.recipe.method ]
                 :: stepsView
             )
         ]
