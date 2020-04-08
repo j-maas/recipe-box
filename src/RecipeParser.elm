@@ -1,4 +1,4 @@
-module RecipeParser exposing (Failure, Problem(..), displayProblem, parse)
+module RecipeParser exposing (Context(..), DeadEnd, Failure, Problem(..), parse)
 
 import Ingredient exposing (Quantity(..))
 import Parser.Advanced as Parser exposing ((|.), (|=), Token(..))
@@ -15,8 +15,8 @@ type alias Failure =
     List (Parser.DeadEnd Context Problem)
 
 
-type alias Context =
-    ()
+type Context
+    = Title
 
 
 type alias Parser a =
@@ -28,25 +28,52 @@ s string =
     Token string (Expecting string)
 
 
+lineBreak : Token Problem
+lineBreak =
+    Token "\n" ExpectingLineBreak
+
+
 parseRecipe : Parser Recipe
 parseRecipe =
     Parser.succeed
         (\title method ->
             Recipe.from title method
         )
-        |. Parser.symbol (s "# ")
-        |= Parser.getChompedString (Parser.chompUntil (s "\n"))
+        |= Parser.inContext Title
+            (Parser.succeed String.trim
+                |. Parser.symbol (s "#")
+                |. chompSpaces
+                |= Parser.getChompedString (Parser.chompUntilEndOr "\n")
+                |> Parser.andThen
+                    (\title ->
+                        if String.isEmpty title then
+                            Parser.problem EmptyText
+
+                        else
+                            Parser.succeed title
+                    )
+            )
         |. Parser.chompWhile (\c -> c == '\n')
         |= Parser.loop ( [], [] ) parseRecursion
 
 
 parseRecursion : ( List Recipe.Part, Recipe.Parts ) -> Parser (Parser.Step ( List Recipe.Part, Recipe.Parts ) Recipe.Parts)
 parseRecursion ( next, paragraphs ) =
+    let
+        chompLineBreaks =
+            Parser.chompWhile (\c -> List.member c [ '\n', ' ' ])
+    in
     Parser.oneOf
-        [ Parser.symbol (s "\n\n")
-            |> Parser.map (\_ -> Parser.Loop ( [], List.reverse next :: paragraphs ))
-        , Parser.symbol (s "\n")
-            |> Parser.map (\_ -> Parser.Loop ( PlainPart " " :: next, paragraphs ))
+        [ Parser.succeed identity
+            |. Parser.symbol lineBreak
+            |= Parser.oneOf
+                [ -- Two line breaks in a row
+                  Parser.symbol lineBreak
+                    |> Parser.map (\_ -> Parser.Loop ( [], List.reverse next :: paragraphs ))
+                , Parser.succeed (Parser.Loop ( PlainPart " " :: next, paragraphs ))
+                ]
+            -- We ignore all immediately following line breaks
+            |. chompLineBreaks
         , Parser.succeed (\ingred -> Parser.Loop ( ingred :: next, paragraphs ))
             |= parseIngredient
         , Parser.succeed (\plain -> Parser.Loop ( plain :: next, paragraphs ))
@@ -84,7 +111,7 @@ parseIngredient =
         |= parseOptional
             (Parser.succeed identity
                 |. Parser.symbol (s ":")
-                |. parseWhitespace
+                |. chompSpaces
                 |= parseQuantity (Set.fromList [ ';', '>' ])
             )
         |= parseOptional
@@ -147,22 +174,22 @@ parseOptional parser =
         ]
 
 
-parseWhitespace : Parser ()
-parseWhitespace =
-    Parser.chompWhile (\c -> c == ' ' || c == '\t')
+chompSpaces : Parser ()
+chompSpaces =
+    Parser.chompWhile (\c -> c == ' ')
 
 
 type Problem
     = Expecting String
+    | ExpectingLineBreak
     | ExpectingEnd
     | ExpectingFloat
     | InvalidNumber
     | EmptyText
 
 
-displayProblem : Problem -> String
-displayProblem problem =
-    "Your text has problem."
+type alias DeadEnd =
+    Parser.DeadEnd Context Problem
 
 
 {-| The built-in float parser has a bug with leading 'e's.

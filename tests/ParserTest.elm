@@ -12,9 +12,19 @@ suite =
     describe "parser"
         [ test "title" <|
             \_ ->
-                RecipeParser.parse "# The most amazing dish in the world\n"
+                RecipeParser.parse "# The most amazing dish in the world"
                     |> Result.map Recipe.title
                     |> Expect.equal (Ok "The most amazing dish in the world")
+        , test "rejects empty title" <|
+            \_ ->
+                RecipeParser.parse "#"
+                    |> Result.map Recipe.title
+                    |> simplifyFailure
+                    |> Expect.equal
+                        (Err
+                            [ SimpleDeadEnd EmptyText [ Title ]
+                            ]
+                        )
         , test "no ingredients" <|
             \_ ->
                 RecipeParser.parse "# Pizza\n\nOrder some pizza."
@@ -147,6 +157,30 @@ suite =
                                 ]
                         )
         ]
+
+
+simplifyFailure : Result RecipeParser.Failure a -> Result (List SimpleDeadEnd) a
+simplifyFailure result =
+    Result.mapError simplifyDeadEnds result
+
+
+type alias SimpleDeadEnd =
+    { problem : RecipeParser.Problem
+    , contextStack : List RecipeParser.Context
+    }
+
+
+simplifyDeadEnds : RecipeParser.Failure -> List SimpleDeadEnd
+simplifyDeadEnds failure =
+    failure
+        |> List.map
+            (\deadEnd ->
+                let
+                    simpleContextStack =
+                        deadEnd.contextStack |> List.map .context
+                in
+                { problem = deadEnd.problem, contextStack = simpleContextStack }
+            )
 
 
 ingredient : String -> Maybe Quantity -> Ingredient

@@ -840,7 +840,29 @@ viewEditRecipe language code maybeFailure =
         [ Html.nav [] [ backToOverview language ]
         , case maybeFailure of
             Just failure ->
-                Html.div [] [ Html.text "Your text contains a problem." ]
+                Html.div
+                    [ css
+                        [ framedStyle
+                        , Css.borderColor (Css.rgb 255 0 0)
+                        , Css.borderWidth (rem 0.5)
+                        ]
+                    ]
+                    [ p []
+                        []
+                        [ Html.text <| language.editRecipe.problemCount (List.length failure) ]
+                    , ul []
+                        []
+                        (List.map
+                            (\deadEnd ->
+                                Html.li
+                                    []
+                                    [ Html.text <|
+                                        language.editRecipe.explainDeadEnd deadEnd
+                                    ]
+                            )
+                            failure
+                        )
+                    ]
 
             Nothing ->
                 -- Do not remove this item. Otherwise, the textarea might lose focus while typing.

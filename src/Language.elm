@@ -1,6 +1,7 @@
 module Language exposing (Language, available, fromString)
 
 import Dict exposing (Dict)
+import RecipeParser exposing (Context(..), DeadEnd, Problem(..))
 
 
 type alias Language a =
@@ -17,7 +18,9 @@ type alias Language a =
         , method : String
         }
     , editRecipe :
-        { save : String
+        { problemCount : Int -> String
+        , explainDeadEnd : DeadEnd -> String
+        , save : String
         }
     , shoppingList :
         { title : String
@@ -52,6 +55,46 @@ available =
         ]
 
 
+deadEndHelper : DeadEnd -> LanguageDeadEnd
+deadEndHelper deadEnd =
+    let
+        contextStack =
+            deadEnd.contextStack |> List.map .context
+    in
+    if List.member Title contextStack then
+        TitleDeadEnd deadEnd.problem
+
+    else
+        ProblemDeadEnd deadEnd.problem
+
+
+type LanguageDeadEnd
+    = TitleDeadEnd Problem
+    | ProblemDeadEnd Problem
+
+
+explainProblem : Problem -> String
+explainProblem problem =
+    case problem of
+        Expecting char ->
+            "A '" ++ char ++ "' is missing."
+
+        ExpectingLineBreak ->
+            "A line break is missing."
+
+        ExpectingEnd ->
+            "There is too much text."
+
+        ExpectingFloat ->
+            "A number is missing."
+
+        InvalidNumber ->
+            "The number is not valid."
+
+        EmptyText ->
+            "I was expecting some text."
+
+
 english : Language a
 english =
     { title = "Recipe Box"
@@ -67,7 +110,16 @@ english =
         , method = "Method"
         }
     , editRecipe =
-        { save = "Save"
+        { problemCount =
+            \count ->
+                case count of
+                    1 ->
+                        "The recipe could not be saved because of a problem:"
+
+                    n ->
+                        "The recipe could not be saved because of " ++ String.fromInt n ++ " problems:"
+        , explainDeadEnd = explainDeadEndInEnglish
+        , save = "Save"
         }
     , shoppingList =
         { title = "Shopping List"
@@ -102,6 +154,38 @@ english =
     }
 
 
+explainDeadEndInEnglish : DeadEnd -> String
+explainDeadEndInEnglish deadEnd =
+    case deadEndHelper deadEnd of
+        TitleDeadEnd problem ->
+            "The recipe must start with a title that is marked with a '#'. But I had a problem:\n" ++ explainProblemInEnglish problem
+
+        ProblemDeadEnd problem ->
+            explainProblemInEnglish problem
+
+
+explainProblemInEnglish : Problem -> String
+explainProblemInEnglish problem =
+    case problem of
+        Expecting char ->
+            "A '" ++ char ++ "' is missing."
+
+        ExpectingLineBreak ->
+            "A line break is missing."
+
+        ExpectingEnd ->
+            "There is too much text."
+
+        ExpectingFloat ->
+            "A number is missing."
+
+        InvalidNumber ->
+            "The number is not valid."
+
+        EmptyText ->
+            "Some text is missing."
+
+
 deutsch : Language a
 deutsch =
     { title = "Rezeptekasten"
@@ -117,7 +201,16 @@ deutsch =
         , method = "Zubereitung"
         }
     , editRecipe =
-        { save = "Speichern"
+        { problemCount =
+            \count ->
+                case count of
+                    1 ->
+                        "Das Rezept konnte aufgrund eines Problems nicht gespeichert werden:"
+
+                    n ->
+                        "Das Rezept konnte aufgrund von " ++ String.fromInt n ++ " Problemen nicht gespeichert werden:"
+        , explainDeadEnd = explainDeadEndInDeutsch
+        , save = "Speichern"
         }
     , shoppingList =
         { title = "Einkaufsliste"
@@ -148,3 +241,35 @@ deutsch =
             ]
     , goToOverview = "Zur Rezeptliste"
     }
+
+
+explainDeadEndInDeutsch : DeadEnd -> String
+explainDeadEndInDeutsch deadEnd =
+    case deadEndHelper deadEnd of
+        TitleDeadEnd problem ->
+            "Das Rezept muss mit einem Titel beginnen, der mit '#' gekennzeichnet wird. Aber es gab ein Problem:\n" ++ explainProblemInDeutsch problem
+
+        ProblemDeadEnd problem ->
+            explainProblemInDeutsch problem
+
+
+explainProblemInDeutsch : Problem -> String
+explainProblemInDeutsch problem =
+    case problem of
+        Expecting char ->
+            "Ein '" ++ char ++ "' fehlt."
+
+        ExpectingLineBreak ->
+            "Es fehlt ein Zeilenumbruch."
+
+        ExpectingEnd ->
+            "Es gibt zu viel Text."
+
+        ExpectingFloat ->
+            "Eine Nummer fehlt."
+
+        InvalidNumber ->
+            "Eine Nummer ist ungültig."
+
+        EmptyText ->
+            "Es fehlt Text."
