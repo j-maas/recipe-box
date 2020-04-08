@@ -8,9 +8,11 @@ import Dict exposing (Dict)
 import Html.Styled as Html exposing (Html)
 import Html.Styled.Attributes as Attributes exposing (css)
 import Html.Styled.Events as Events
+import Ingredient exposing (Ingredient)
 import IngredientMap exposing (IngredientMap)
 import Language
 import Recipe exposing (Recipe)
+import RecipeParser
 import Set exposing (Set)
 import Url exposing (Url)
 
@@ -77,12 +79,12 @@ init flags url key =
         recipes =
             List.filterMap
                 (\code ->
-                    Recipe.parse code
+                    RecipeParser.parse code
                         |> Result.toMaybe
                         |> Maybe.map (\recipe -> ( recipe, code ))
                 )
                 flags.recipes
-                |> List.map (\( recipe, code ) -> ( Recipe.title recipe, ( Recipe.steps recipe, code ) ))
+                |> List.map (\( recipe, code ) -> ( Recipe.title recipe, ( Recipe.method recipe, code ) ))
                 |> Dict.fromList
 
         shoppingList =
@@ -110,8 +112,7 @@ init flags url key =
 
 
 type Msg
-    = NoOp
-    | DeleteRecipe String
+    = DeleteRecipe String
     | Edited String
     | Save
     | AddRecipeToShoppingList String
@@ -135,9 +136,6 @@ update msg model =
             Navigation.pushUrl model.key (stringFromRoute route)
     in
     case msg of
-        NoOp ->
-            ( model, Cmd.none )
-
         DeleteRecipe title ->
             let
                 state =
@@ -167,7 +165,7 @@ update msg model =
         Save ->
             case model.screen of
                 Edit { code } ->
-                    case Recipe.parse code of
+                    case RecipeParser.parse code of
                         Ok recipe ->
                             let
                                 state =
@@ -177,7 +175,7 @@ update msg model =
                                     Recipe.title recipe
 
                                 parts =
-                                    Recipe.steps recipe
+                                    Recipe.method recipe
                             in
                             ( { model
                                 | state =
@@ -233,7 +231,7 @@ update msg model =
 
                 newIngredients =
                     ingredientsFromRecipes state.recipes newSelectedRecipes
-                        |> List.map Recipe.getListName
+                        |> List.map Ingredient.listText
                         |> Set.fromList
 
                 newChecked =
@@ -650,7 +648,9 @@ viewRecipe language recipe maybeChecks =
             Recipe.title recipe
 
         ingredientMap =
-            IngredientMap.fromDescription <| Recipe.steps recipe
+            Recipe.method recipe
+                |> Recipe.ingredients
+                |> IngredientMap.fromIngredients
 
         checks =
             maybeChecks |> Maybe.withDefault Set.empty
@@ -672,17 +672,17 @@ viewRecipe language recipe maybeChecks =
                         Recipe.IngredientPart ingredient ->
                             let
                                 quantityText =
-                                    case Recipe.getQuantity ingredient of
+                                    case Ingredient.quantity ingredient of
                                         Just quantity ->
                                             " ("
                                                 ++ (case quantity of
-                                                        Recipe.Description description ->
+                                                        Ingredient.Description description ->
                                                             description
 
-                                                        Recipe.Amount amount ->
+                                                        Ingredient.Amount amount ->
                                                             String.fromFloat amount
 
-                                                        Recipe.Measure amount unit ->
+                                                        Ingredient.Measure amount unit ->
                                                             String.fromFloat amount ++ " " ++ unit
                                                    )
                                                 ++ ")"
@@ -690,7 +690,7 @@ viewRecipe language recipe maybeChecks =
                                         Nothing ->
                                             ""
                             in
-                            Html.text (Recipe.getText ingredient ++ quantityText)
+                            Html.text (Ingredient.text ingredient ++ quantityText)
                 )
                 recipe
                 |> List.map (\paragraph -> p [] [] paragraph)
@@ -950,7 +950,7 @@ viewShoppingList language recipes shoppingList =
     )
 
 
-ingredientsFromRecipes : RecipeStore -> Set String -> List Recipe.Ingredient
+ingredientsFromRecipes : RecipeStore -> Set String -> List Ingredient
 ingredientsFromRecipes recipes selectedRecipes =
     selectedRecipes
         |> Set.toList
