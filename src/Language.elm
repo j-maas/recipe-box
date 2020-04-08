@@ -29,6 +29,7 @@ type alias Language a =
         , allRecipesSelected : String
         , emptyShoppingList : String
         }
+    , clear : String
     , noRecipes : (String -> a) -> (String -> a) -> List a
     , goToOverview : String
     }
@@ -90,6 +91,7 @@ english =
         , allRecipesSelected = "You have selected all recipes."
         , emptyShoppingList = "Your shopping list is empty. (Select some recipes by opening the list of selected recipes.)"
         }
+    , clear = "Clear list"
     , noRecipes =
         \normalText linkToNew ->
             [ normalText "You do not have any recipes yet. Create a "
@@ -137,6 +139,7 @@ deutsch =
         , allRecipesSelected = "Du hast alle Rezepte ausgewählt."
         , emptyShoppingList = "Deine Einkaufsliste ist leer. (Füge Rezepte hinzu, indem du die Liste der ausgewählten Rezepte aufklappst.)"
         }
+    , clear = "Alle Häckchen entfernen"
     , noRecipes =
         \normalText linkToNew ->
             [ normalText "Du hast noch keine Rezepte. Füge ein "

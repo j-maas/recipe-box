@@ -117,7 +117,9 @@ type Msg
     | AddRecipeToShoppingList String
     | RemoveRecipeFromShoppingList String
     | UpdateCheckOnShoppingList String Bool
+    | ClearShoppingList
     | UpdateCheckOnRecipe String String Bool
+    | ClearRecipeChecks String
     | SwitchLanguage String
     | UrlChanged Url
     | LinkClicked Browser.UrlRequest
@@ -256,7 +258,7 @@ update msg model =
                     model.state
 
                 oldShoppingList =
-                    model.state.shoppingList
+                    state.shoppingList
 
                 operation =
                     if checked then
@@ -272,6 +274,21 @@ update msg model =
                 | state =
                     { state | shoppingList = newShoppingList }
               }
+            , saveShoppingListCmd newShoppingList
+            )
+
+        ClearShoppingList ->
+            let
+                state =
+                    model.state
+
+                oldShoppingList =
+                    state.shoppingList
+
+                newShoppingList =
+                    { oldShoppingList | checked = Set.empty }
+            in
+            ( { model | state = { state | shoppingList = newShoppingList } }
             , saveShoppingListCmd newShoppingList
             )
 
@@ -303,6 +320,22 @@ update msg model =
                     { state | recipeChecks = newRecipeChecks }
               }
             , saveRecipeChecksCmd recipeTitle newChecks
+            )
+
+        ClearRecipeChecks title ->
+            let
+                state =
+                    model.state
+
+                newRecipeChecks =
+                    state.recipeChecks
+                        |> Dict.remove title
+            in
+            ( { model
+                | state =
+                    { state | recipeChecks = newRecipeChecks }
+              }
+            , saveRecipeChecksCmd title Set.empty
             )
 
         SwitchLanguage code ->
@@ -611,7 +644,7 @@ recipeLinkStyle =
 
 
 viewRecipe : Language -> Recipe -> Maybe (Set String) -> ( Maybe String, Html Msg )
-viewRecipe language recipe recipeChecks =
+viewRecipe language recipe maybeChecks =
     let
         title =
             Recipe.title recipe
@@ -619,11 +652,14 @@ viewRecipe language recipe recipeChecks =
         ingredientMap =
             IngredientMap.fromDescription <| Recipe.steps recipe
 
+        checks =
+            maybeChecks |> Maybe.withDefault Set.empty
+
         ingredientsView =
             viewIngredientList
                 [ Html.text language.recipe.noIngredientsRequired ]
                 ingredientMap
-                (recipeChecks |> Maybe.withDefault Set.empty)
+                checks
                 (UpdateCheckOnRecipe title)
 
         stepsView =
@@ -690,8 +726,19 @@ viewRecipe language recipe recipeChecks =
                           ]
                         )
                     , children =
-                        [ ingredientsView
-                        ]
+                         ingredientsView
+                        
+                            :: (if Set.isEmpty checks then
+                                    []
+
+                                else
+                                    [ toolbar
+                                        [ smallButton []
+                                            language.clear
+                                            (ClearRecipeChecks title)
+                                        ]
+                                    ]
+                               )
                     }
                 :: h2 [ headingStyle ] [] [ Html.text language.recipe.method ]
                 :: stepsView
@@ -890,7 +937,12 @@ viewShoppingList language recipes shoppingList =
                 UpdateCheckOnShoppingList
       in
       Html.div []
-        ([ Html.nav [] [ backToOverview language ]
+        ([ Html.nav []
+            [ backToOverview language
+            , toolbar
+                [ smallButton [] language.clear ClearShoppingList
+                ]
+            ]
          , h1 [] [] [ Html.text language.shoppingList.title ]
          ]
             ++ selectedRecipesView

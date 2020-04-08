@@ -24,7 +24,8 @@ To build everything, run `npm run build` and deploy the `dist` folder.
   - [x] Allow ticking off items.
   - [x] Persist selected items
   - [x] Persist shopping list.
-  - [ ] Add button to clear all checks.
+  - [x] Add button to clear all checks.
+  - [ ] Add undo for clearing. Undo should be available until new checks are made.
   - [ ] Add items to shopping list manually.
   - [x] Indicate number of selected and unselected recipes.
   - [ ] Copy button to export shopping list into other apps.
@@ -36,7 +37,6 @@ To build everything, run `npm run build` and deploy the `dist` folder.
   - [ ] Filter recipes.
 - Recipe
   - [x] Indicate how many ingredients there are in ingredient heading.
-  - [ ] Do not strike through checked ingredients.
   - [x] Show quantities in method. This is helpful when assembling ingredients while cooking.
   - [ ] Highlight occurrences of ingredients on hover.
   - [ ] Allow setting portions.
