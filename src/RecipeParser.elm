@@ -1,19 +1,31 @@
-module RecipeParser exposing (parse)
+module RecipeParser exposing (Failure, Problem(..), displayProblem, parse)
 
 import Ingredient exposing (Quantity(..))
-import Parser exposing ((|.), (|=), Parser)
+import Parser.Advanced as Parser exposing ((|.), (|=), Token(..))
 import Recipe exposing (Part(..), Recipe)
 import Set exposing (Set)
 
 
-parse : String -> Result ParsingError Recipe
+parse : String -> Result Failure Recipe
 parse input =
     Parser.run parseRecipe input
-        |> Result.mapError deadEndsToString
 
 
-type alias ParsingError =
-    String
+type alias Failure =
+    List (Parser.DeadEnd Context Problem)
+
+
+type alias Context =
+    ()
+
+
+type alias Parser a =
+    Parser.Parser Context Problem a
+
+
+s : String -> Token Problem
+s string =
+    Token string (Expecting string)
 
 
 parseRecipe : Parser Recipe
@@ -22,8 +34,8 @@ parseRecipe =
         (\title method ->
             Recipe.from title method
         )
-        |. Parser.symbol "# "
-        |= Parser.getChompedString (Parser.chompUntil "\n")
+        |. Parser.symbol (s "# ")
+        |= Parser.getChompedString (Parser.chompUntil (s "\n"))
         |. Parser.chompWhile (\c -> c == '\n')
         |= Parser.loop ( [], [] ) parseRecursion
 
@@ -31,15 +43,15 @@ parseRecipe =
 parseRecursion : ( List Recipe.Part, Recipe.Parts ) -> Parser (Parser.Step ( List Recipe.Part, Recipe.Parts ) Recipe.Parts)
 parseRecursion ( next, paragraphs ) =
     Parser.oneOf
-        [ Parser.symbol "\n\n"
+        [ Parser.symbol (s "\n\n")
             |> Parser.map (\_ -> Parser.Loop ( [], List.reverse next :: paragraphs ))
-        , Parser.symbol "\n"
+        , Parser.symbol (s "\n")
             |> Parser.map (\_ -> Parser.Loop ( PlainPart " " :: next, paragraphs ))
         , Parser.succeed (\ingred -> Parser.Loop ( ingred :: next, paragraphs ))
             |= parseIngredient
         , Parser.succeed (\plain -> Parser.Loop ( plain :: next, paragraphs ))
             |= parsePlain (Set.fromList [ '<', '\n' ])
-        , Parser.end |> Parser.map (\_ -> Parser.Done (List.reverse next :: paragraphs |> List.reverse))
+        , Parser.end ExpectingEnd |> Parser.map (\_ -> Parser.Done (List.reverse next :: paragraphs |> List.reverse))
         ]
 
 
@@ -49,7 +61,7 @@ parsePlain endChars =
         |> Parser.andThen
             (\text ->
                 if String.isEmpty text then
-                    Parser.problem "Text cannot be empty"
+                    Parser.problem EmptyText
 
                 else
                     Parser.succeed (PlainPart text)
@@ -67,20 +79,20 @@ parseIngredient =
                     maybeListName
                 )
         )
-        |. Parser.symbol "<"
+        |. Parser.symbol (s "<")
         |= parseUntil (Set.fromList [ ':', ';', '>' ])
         |= parseOptional
             (Parser.succeed identity
-                |. Parser.symbol ":"
+                |. Parser.symbol (s ":")
                 |. parseWhitespace
                 |= parseQuantity (Set.fromList [ ';', '>' ])
             )
         |= parseOptional
             (Parser.succeed String.trim
-                |. Parser.symbol ";"
+                |. Parser.symbol (s ";")
                 |= parseUntil (Set.fromList [ '>' ])
             )
-        |. Parser.symbol ">"
+        |. Parser.symbol (s ">")
 
 
 parseQuantity : Set Char -> Parser Quantity
@@ -98,7 +110,7 @@ parseQuantity endChars =
             |= parseFloat
             |= parseOptional
                 (Parser.succeed identity
-                    |. Parser.symbol " "
+                    |. Parser.symbol (s " ")
                     |= parseUntil endChars
                 )
         , parseDescription endChars
@@ -120,7 +132,7 @@ parseUntil endChars =
         |> Parser.andThen
             (\text ->
                 if String.isEmpty text then
-                    Parser.problem "Inside text cannot be empty"
+                    Parser.problem EmptyText
 
                 else
                     Parser.succeed text
@@ -140,70 +152,17 @@ parseWhitespace =
     Parser.chompWhile (\c -> c == ' ' || c == '\t')
 
 
-
--- Miscellaneous
-
-
-{-|
-
-    The official method is currently a placeholder.
-    See https://github.com/elm/parser/issues/9
-
--}
-deadEndsToString : List Parser.DeadEnd -> String
-deadEndsToString deadEnds =
-    String.concat (List.intersperse "; " (List.map deadEndToString deadEnds))
+type Problem
+    = Expecting String
+    | ExpectingEnd
+    | ExpectingFloat
+    | InvalidNumber
+    | EmptyText
 
 
-deadEndToString : Parser.DeadEnd -> String
-deadEndToString deadend =
-    problemToString deadend.problem ++ " at row " ++ String.fromInt deadend.row ++ ", col " ++ String.fromInt deadend.col
-
-
-problemToString : Parser.Problem -> String
-problemToString p =
-    case p of
-        Parser.Expecting s ->
-            "expecting '" ++ s ++ "'"
-
-        Parser.ExpectingInt ->
-            "expecting int"
-
-        Parser.ExpectingHex ->
-            "expecting hex"
-
-        Parser.ExpectingOctal ->
-            "expecting octal"
-
-        Parser.ExpectingBinary ->
-            "expecting binary"
-
-        Parser.ExpectingFloat ->
-            "expecting float"
-
-        Parser.ExpectingNumber ->
-            "expecting number"
-
-        Parser.ExpectingVariable ->
-            "expecting variable"
-
-        Parser.ExpectingSymbol s ->
-            "expecting symbol '" ++ s ++ "'"
-
-        Parser.ExpectingKeyword s ->
-            "expecting keyword '" ++ s ++ "'"
-
-        Parser.ExpectingEnd ->
-            "expecting end"
-
-        Parser.UnexpectedChar ->
-            "unexpected char"
-
-        Parser.Problem s ->
-            "problem " ++ s
-
-        Parser.BadRepeat ->
-            "bad repeat"
+displayProblem : Problem -> String
+displayProblem problem =
+    "Your text has problem."
 
 
 {-| The built-in float parser has a bug with leading 'e's.
@@ -213,8 +172,8 @@ parseFloat : Parser Float
 parseFloat =
     Parser.backtrackable
         (Parser.oneOf
-            [ Parser.symbol "e"
-                |> Parser.andThen (\_ -> Parser.problem "A float cannot begin with e")
-            , Parser.float
+            [ Parser.symbol (s "e")
+                |> Parser.andThen (\_ -> Parser.problem InvalidNumber)
+            , Parser.float ExpectingFloat InvalidNumber
             ]
         )

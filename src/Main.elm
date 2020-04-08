@@ -57,7 +57,7 @@ type alias ShoppingList =
 type Screen
     = Overview
     | Recipe Recipe
-    | Edit { code : String, error : Maybe String }
+    | Edit { code : String, failure : Maybe RecipeParser.Failure }
     | Shopping
 
 
@@ -155,7 +155,7 @@ update msg model =
                 newScreen =
                     case model.screen of
                         Edit _ ->
-                            Edit { code = code, error = Nothing }
+                            Edit { code = code, failure = Nothing }
 
                         _ ->
                             model.screen
@@ -192,8 +192,16 @@ update msg model =
                                 ]
                             )
 
-                        Err error ->
-                            ( { model | screen = Edit { code = code, error = Just error } }, Cmd.none )
+                        Err failure ->
+                            ( { model
+                                | screen =
+                                    Edit
+                                        { code = code
+                                        , failure = Just failure
+                                        }
+                              }
+                            , Cmd.none
+                            )
 
                 _ ->
                     ( model, Cmd.none )
@@ -380,13 +388,13 @@ screenFromRoute state route =
                     )
 
         NewRoute ->
-            Just <| Edit { code = "", error = Nothing }
+            Just <| Edit { code = "", failure = Nothing }
 
         EditRoute title ->
             Dict.get title state.recipes
                 |> Maybe.map
                     (\( _, code ) ->
-                        Edit { code = code, error = Nothing }
+                        Edit { code = code, failure = Nothing }
                     )
 
         ShoppingListRoute ->
@@ -520,8 +528,8 @@ view model =
                     in
                     viewRecipe model.language recipe recipeChecks
 
-                Edit { code, error } ->
-                    viewEditRecipe model.language code error
+                Edit { code, failure } ->
+                    viewEditRecipe model.language code failure
 
                 Shopping ->
                     viewShoppingList model.language state.recipes state.shoppingList
@@ -825,14 +833,14 @@ viewIngredient ( name, quantities ) =
     Html.text text
 
 
-viewEditRecipe : Language -> String -> Maybe String -> ( Maybe String, Html Msg )
-viewEditRecipe language code errors =
+viewEditRecipe : Language -> String -> Maybe RecipeParser.Failure -> ( Maybe String, Html Msg )
+viewEditRecipe language code maybeFailure =
     ( Nothing
     , Html.div []
         [ Html.nav [] [ backToOverview language ]
-        , case errors of
-            Just error ->
-                Html.div [] [ Html.text error ]
+        , case maybeFailure of
+            Just failure ->
+                Html.div [] [ Html.text "Your text contains a problem." ]
 
             Nothing ->
                 -- Do not remove this item. Otherwise, the textarea might lose focus while typing.
