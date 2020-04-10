@@ -203,15 +203,13 @@ type alias DeadEnd =
     Parser.DeadEnd Context Problem
 
 
-{-| The built-in float parser has a bug with leading 'e's.
+{-| The built-in float parser has a bug with leading 'e'.
 See <https://github.com/elm/parser/issues/28>
 -}
 parseFloat : Parser Float
 parseFloat =
-    Parser.backtrackable
-        (Parser.oneOf
-            [ Parser.symbol (s "e")
-                |> Parser.andThen (\_ -> Parser.problem InvalidNumber)
-            , Parser.float ExpectingFloat InvalidNumber
-            ]
-        )
+    {- By making it backtrackable, even if the input start with an 'e',
+       we will be able to try out other alternatives instead of getting
+       stuck on it as an invalid number.
+    -}
+    Parser.backtrackable <| Parser.float ExpectingFloat InvalidNumber
