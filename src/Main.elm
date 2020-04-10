@@ -681,10 +681,10 @@ viewOverview : Language -> List String -> ( Maybe String, Html Msg )
 viewOverview language recipeTitles =
     ( Nothing
     , Html.div []
-        [ h1 [] [] [ Html.text language.title ]
+        [ Html.div [ css [ toolbarSpacingStyle, Css.marginBottom (rem 1) ] ] [ languagePicker language, navLink [] language.overview.goToSettings SettingsRoute ]
+        , h1 [] [] [ Html.text language.title ]
         , Html.nav [ css [ Css.displayFlex, Css.justifyContent Css.spaceBetween ] ]
-            [ Html.div [ css [ toolbarSpacingStyle ] ] [ navLink [] language.overview.goToShoppingList ShoppingListRoute ]
-            , Html.div [ css [ toolbarSpacingStyle ] ] [ navLink [] language.overview.goToSettings SettingsRoute, languagePicker language ]
+            [ navLink [] language.overview.goToShoppingList ShoppingListRoute
             ]
         , toolbar [ linkButton language.overview.newRecipe NewRoute ]
         , viewRecipeList language recipeTitles
