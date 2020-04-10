@@ -541,8 +541,10 @@ view model =
                     |> Maybe.withDefault ""
                )
     , body =
-        List.map Html.toUnstyled
-            [ Html.main_
+        List.map
+            Html.toUnstyled
+            [ Global.global [ Global.html [ Css.fontSize (pct 115) ] ]
+            , Html.main_
                 [ css
                     [ bodyFontStyle
                     , Css.lineHeight (num 1.4)
@@ -575,7 +577,7 @@ languagePicker : Language -> Html Msg
 languagePicker currentLanguage =
     Html.select
         [ Events.onInput SwitchLanguage
-        , css [ borderStyle, bodyFontStyle ]
+        , css [ borderStyle, bodyFontStyle, Css.fontSize Css.inherit ]
         ]
         (Language.available
             |> Dict.toList

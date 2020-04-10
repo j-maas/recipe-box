@@ -33,6 +33,8 @@ To build everything, run `npm run build` and deploy the `dist` folder.
   - [ ] Add copy button.
   - [ ] Import and export recipes from and to files.
   - [ ] Add indicator to top of files that explains how to view the recipes for people who do not know what to do with the files.
+  - [ ] Add WebDav integration (for NextCloud).
+  - [ ] Add DropBox integration.
 - Overview
   - [ ] Filter recipes.
   - [ ] Search by ingredient.
@@ -56,6 +58,6 @@ To build everything, run `npm run build` and deploy the `dist` folder.
   - [ ] Prevent multiple repetitions of context explanations. (E.g., when a quantity is empty, there is a problem for an expected float and an expected text that are listed separately.)
   - [ ] Highlight errors in textarea. (See https://codersblock.com/blog/highlight-text-inside-a-textarea/)
   - [ ] Allow named sections representing steps that have individual ingredient lists for preparation.
-- [ ] Increase font size slightly.
+- [x] Increase font size slightly.
 - [ ] Fix highlight on real button differing from link button.
 - [ ] Host fonts, instead of fetching them from Google.
