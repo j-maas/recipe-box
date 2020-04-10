@@ -51,7 +51,7 @@
         }
         console.info("Loaded " + logShoppingList(shoppingList) + ".")
 
-        var languageKey = "languageSelection"
+        var languageKey = "languageSelection";
         var selectedLanguage = localStorage.getItem(languageKey);
         var language = selectedLanguage || navigator.language;
         if (selectedLanguage) {
@@ -60,6 +60,12 @@
             console.info("No language preference found. Guessing language based on browser language and choosing '" + language + "'.");
         }
 
+        var settingsKey = "settings";
+        var settings = JSON.parse(localStorage.getItem(settingsKey)) || {
+            wakeVideoId: null
+        };
+        console.info("Loaded settings:", settings);
+
         var app = Elm.Main.init({
             node: document.getElementById('elm'),
             flags: {
@@ -67,6 +73,7 @@
                 recipeChecks,
                 shoppingList,
                 language,
+                settings,
             }
         });
 
@@ -99,8 +106,13 @@
         }
 
         function saveLanguage(code) {
-            console.info("Storing language preference for '" + code + "'.");
+            console.info("Saving language preference for '" + code + "'.");
             localStorage.setItem(languageKey, code);
+        }
+
+        function saveSettings(settings) {
+            console.info("Saving settings:", settings);
+            localStorage.setItem(settingsKey, JSON.stringify(settings));
         }
 
         app.ports.saveRecipe.subscribe(function (data) {
@@ -117,6 +129,9 @@
         });
         app.ports.saveLanguage.subscribe(function (code) {
             saveLanguage(code);
+        })
+        app.ports.saveSettings.subscribe(function (settings) {
+            saveSettings(settings);
         })
     </script>
 </body>
