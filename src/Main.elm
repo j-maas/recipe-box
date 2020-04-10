@@ -81,6 +81,7 @@ type alias Flags =
     { recipes : List String
     , recipeChecks : List ( String, List String )
     , shoppingList : PortShoppingList
+    , settings : { wakeVideoId : Maybe String }
     , language : String
     }
 
@@ -112,7 +113,7 @@ init flags url key =
                     flags.recipeChecks
                     |> Dict.fromList
             , shoppingList = shoppingList
-            , wakeVideoId = "14Cf79j92xA"
+            , wakeVideoId = flags.settings.wakeVideoId |> Maybe.withDefault "14Cf79j92xA"
             }
     in
     ( { key = key
@@ -404,10 +405,10 @@ update msg model =
                     else
                         Nothing
 
-                newModel =
+                ( newModel, cmd ) =
                     case maybeId of
                         Just id ->
-                            { model
+                            ( { model
                                 | state = { state | wakeVideoId = id }
                                 , screen =
                                     case model.screen of
@@ -420,10 +421,12 @@ update msg model =
 
                                         _ ->
                                             model.screen
-                            }
+                              }
+                            , saveSettings { wakeVideoId = id }
+                            )
 
                         Nothing ->
-                            { model
+                            ( { model
                                 | screen =
                                     case model.screen of
                                         Settings s ->
@@ -435,9 +438,11 @@ update msg model =
 
                                         _ ->
                                             model.screen
-                            }
+                              }
+                            , Cmd.none
+                            )
             in
-            ( newModel, Cmd.none )
+            ( newModel, cmd )
 
         SwitchLanguage code ->
             ( { model
@@ -608,6 +613,9 @@ port saveShoppingList : PortShoppingList -> Cmd msg
 port saveLanguage : String -> Cmd msg
 
 
+port saveSettings : { wakeVideoId : String } -> Cmd msg
+
+
 subscriptions : Model -> Sub Msg
 subscriptions _ =
     Sub.none
@@ -669,7 +677,6 @@ view model =
                     , Css.lineHeight (num 1.4)
                     , Css.maxWidth (rem 48)
                     , Css.margin2 zero auto
-                    , Css.marginTop (rem 2)
                     ]
                 ]
                 [ body ]
