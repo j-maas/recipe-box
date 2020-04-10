@@ -8,11 +8,15 @@ type alias Language a =
     { title : String
     , overview :
         { goToShoppingList : String
+        , goToSettings : String
         , newRecipe : String
         }
     , recipe :
         { edit : String
         , delete : String
+        , moreOptions : String
+        , wakeVideoDescription : String
+        , wakeVideoToggle : Bool -> String
         , ingredients : String
         , noIngredientsRequired : String
         , method : String
@@ -31,6 +35,11 @@ type alias Language a =
         , add : String
         , allRecipesSelected : String
         , emptyShoppingList : String
+        }
+    , settings :
+        { title : String
+        , videoUrlLabel : String
+        , videoUrlInvalid : String
         }
     , clearChecks : String
     , noRecipes : (String -> a) -> (String -> a) -> List a
@@ -89,11 +98,21 @@ english =
     { title = "Recipe Box"
     , overview =
         { goToShoppingList = "Go to shopping list"
+        , goToSettings = "Go to settings"
         , newRecipe = "New recipe"
         }
     , recipe =
         { edit = "Edit"
         , delete = "Delete"
+        , moreOptions = "More options"
+        , wakeVideoDescription = "Keep your screen on by playing a video. After hitting play, you can close the options. The video will play in the background in a loop."
+        , wakeVideoToggle =
+            \isShown ->
+                if isShown then
+                    "Hide video"
+
+                else
+                    "Load video"
         , ingredients = "Ingredients"
         , noIngredientsRequired = "No ingredients required."
         , method = "Method"
@@ -131,6 +150,11 @@ english =
         , add = "Add"
         , allRecipesSelected = "You have selected all recipes."
         , emptyShoppingList = "Your shopping list is empty. (Select some recipes by opening the list of selected recipes.)"
+        }
+    , settings =
+        { title = "Settings"
+        , videoUrlLabel = "URL to YouTube video"
+        , videoUrlInvalid = "This URL is invalid."
         }
     , clearChecks = "Clear all checkmarks"
     , noRecipes =
@@ -192,11 +216,21 @@ deutsch =
     { title = "Rezeptekasten"
     , overview =
         { goToShoppingList = "Zur Einkaufsliste"
+        , goToSettings = "Zu den Einstellungen"
         , newRecipe = "Neues Rezept"
         }
     , recipe =
         { edit = "Bearbeiten"
         , delete = "Löschen"
+        , moreOptions = "Mehr Einstellungen"
+        , wakeVideoDescription = "Verhindere, dass sich dein Bildschirm ausschaltet, indem du ein Video abspielst. Nachdem du es gestartet hast, kannst du diese Einstellungen wieder schließen. Das Video wird im Hintergrund in einer Endlosschleife abgespielt."
+        , wakeVideoToggle =
+            \isShown ->
+                if isShown then
+                    "Video verstecken"
+
+                else
+                    "Video laden"
         , ingredients = "Zutaten"
         , noIngredientsRequired = "Keine Zutaten nötig."
         , method = "Zubereitung"
@@ -232,6 +266,11 @@ deutsch =
         , add = "Hinzufügen"
         , allRecipesSelected = "Du hast alle Rezepte ausgewählt."
         , emptyShoppingList = "Deine Einkaufsliste ist leer. (Füge Rezepte hinzu, indem du die Liste der ausgewählten Rezepte aufklappst.)"
+        }
+    , settings =
+        { title = "Einstellungen"
+        , videoUrlLabel = "URL zum YouTube-Video"
+        , videoUrlInvalid = "Diese URL ist ungültig."
         }
     , clearChecks = "Alle Häckchen entfernen"
     , noRecipes =

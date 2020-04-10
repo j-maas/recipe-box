@@ -13,9 +13,11 @@ import Html.Styled.Events as Events
 import Ingredient exposing (Ingredient)
 import IngredientMap exposing (IngredientMap)
 import Language
+import List.Extra as List
 import Recipe exposing (Recipe)
 import RecipeParser
 import Set exposing (Set)
+import TypedUrl
 import Url exposing (Url)
 
 
@@ -62,6 +64,13 @@ type Screen
     | Recipe Recipe { showWakeVideo : Bool }
     | Edit { code : String, failure : Maybe RecipeParser.Failure }
     | Shopping
+    | Settings SettingsState
+
+
+type alias SettingsState =
+    { wakeVideoIdField : String
+    , wakeVideoIdError : Bool
+    }
 
 
 type alias RecipeStore =
@@ -126,6 +135,7 @@ type Msg
     | UpdateCheckOnRecipe String String Bool
     | ClearRecipeChecks String
     | ToggleVideo
+    | SetWakeVideoUrl String
     | SwitchLanguage String
     | UrlChanged Url
     | LinkClicked Browser.UrlRequest
@@ -363,6 +373,72 @@ update msg model =
             , Cmd.none
             )
 
+        SetWakeVideoUrl raw ->
+            let
+                state =
+                    model.state
+
+                parsed =
+                    TypedUrl.parse raw
+                        |> Maybe.andThen
+                            (\url ->
+                                -- https://www.youtube.com/watch?v=14Cf79j92xA&feature=emb_title
+                                case List.find (\( query, _ ) -> query == "v") url.query of
+                                    Just ( _, id ) ->
+                                        Just id
+
+                                    Nothing ->
+                                        -- https://youtube.com/embed/14Cf79j92xA
+                                        -- https://youtu.be/14Cf79j92xA
+                                        List.last url.path
+                            )
+                        |> Maybe.withDefault raw
+
+                maybeId =
+                    if
+                        (String.length parsed > 0)
+                            && String.all (\c -> Char.isAlphaNum c || c == '_' || c == '-') parsed
+                    then
+                        Just parsed
+
+                    else
+                        Nothing
+
+                newModel =
+                    case maybeId of
+                        Just id ->
+                            { model
+                                | state = { state | wakeVideoId = id }
+                                , screen =
+                                    case model.screen of
+                                        Settings s ->
+                                            Settings
+                                                { s
+                                                    | wakeVideoIdError = False
+                                                    , wakeVideoIdField = raw
+                                                }
+
+                                        _ ->
+                                            model.screen
+                            }
+
+                        Nothing ->
+                            { model
+                                | screen =
+                                    case model.screen of
+                                        Settings s ->
+                                            Settings
+                                                { s
+                                                    | wakeVideoIdError = True
+                                                    , wakeVideoIdField = raw
+                                                }
+
+                                        _ ->
+                                            model.screen
+                            }
+            in
+            ( newModel, Cmd.none )
+
         SwitchLanguage code ->
             ( { model
                 | language =
@@ -391,6 +467,7 @@ type Route
     | NewRoute
     | EditRoute String
     | ShoppingListRoute
+    | SettingsRoute
 
 
 screenFromRoute : State -> Route -> Maybe Screen
@@ -419,6 +496,14 @@ screenFromRoute state route =
         ShoppingListRoute ->
             Just Shopping
 
+        SettingsRoute ->
+            Just <|
+                Settings
+                    { wakeVideoIdError = False
+                    , wakeVideoIdField =
+                        "https://youtu.be/" ++ state.wakeVideoId
+                    }
+
 
 stringFromRoute : Route -> String
 stringFromRoute route =
@@ -437,6 +522,9 @@ stringFromRoute route =
 
         ShoppingListRoute ->
             "#shopping"
+
+        SettingsRoute ->
+            "#settings"
 
 
 parseRoute : Url -> Route
@@ -465,6 +553,9 @@ parseRoute url =
 
                 else if raw == "shopping" then
                     Just ShoppingListRoute
+
+                else if raw == "settings" then
+                    Just SettingsRoute
 
                 else
                     Nothing
@@ -558,6 +649,9 @@ view model =
 
                 Shopping ->
                     viewShoppingList model.language state.recipes state.shoppingList
+
+                Settings s ->
+                    viewSettings model.language s state.wakeVideoId
     in
     { title =
         model.language.title
@@ -589,8 +683,8 @@ viewOverview language recipeTitles =
     , Html.div []
         [ h1 [] [] [ Html.text language.title ]
         , Html.nav [ css [ Css.displayFlex, Css.justifyContent Css.spaceBetween ] ]
-            [ Html.div [] [ navLink [] language.overview.goToShoppingList ShoppingListRoute ]
-            , Html.div [] [ languagePicker language ]
+            [ Html.div [ css [ toolbarSpacingStyle ] ] [ navLink [] language.overview.goToShoppingList ShoppingListRoute ]
+            , Html.div [ css [ toolbarSpacingStyle ] ] [ navLink [] language.overview.goToSettings SettingsRoute, languagePicker language ]
             ]
         , toolbar [ linkButton language.overview.newRecipe NewRoute ]
         , viewRecipeList language recipeTitles
@@ -747,30 +841,18 @@ viewRecipe language recipe options =
                 ]
             , details [ Css.marginTop (rem 1), Css.marginBottom (rem 1) ]
                 []
-                { summary = ( [], [ Html.text "More options" ] )
+                { summary = ( [], [ Html.text language.recipe.moreOptions ] )
                 , children =
                     [ Html.div [ css [ Css.marginTop (rem 0.5) ] ]
-                        ([ p [] [] [ Html.text "Keep your screen on by playing a video. After hitting play, you can close the options. The video will play in the background in a loop." ]
+                        ([ p [] [] [ Html.text language.recipe.wakeVideoDescription ]
                          , toolbar
                             [ button []
-                                (if options.showVideo then
-                                    "Hide video"
-
-                                 else
-                                    "Load video"
-                                )
+                                (language.recipe.wakeVideoToggle options.showVideo)
                                 ToggleVideo
                             ]
                          ]
                             ++ (if options.showVideo then
-                                    [ Html.div [ css [ Css.display Css.block ] ]
-                                        [ Embed.Youtube.fromString options.videoId
-                                            |> Embed.Youtube.attributes
-                                                [ Embed.Youtube.Attributes.loop
-                                                ]
-                                            |> Embed.Youtube.toHtml
-                                            |> Html.fromUnstyled
-                                        ]
+                                    [ viewVideo options.videoId
                                     ]
 
                                 else
@@ -899,6 +981,18 @@ viewIngredient ( name, quantities ) =
             name ++ quantitiesText
     in
     Html.text text
+
+
+viewVideo : String -> Html Msg
+viewVideo id =
+    Html.div [ css [ Css.display Css.block ] ]
+        [ Embed.Youtube.fromString id
+            |> Embed.Youtube.attributes
+                [ Embed.Youtube.Attributes.loop
+                ]
+            |> Embed.Youtube.toHtml
+            |> Html.fromUnstyled
+        ]
 
 
 viewEditRecipe : Language -> String -> Maybe RecipeParser.Failure -> ( Maybe String, Html Msg )
@@ -1056,6 +1150,27 @@ ingredientsFromRecipes recipes selectedRecipes =
         |> List.concatMap (\( parts, _ ) -> Recipe.ingredients parts)
 
 
+viewSettings : Language -> SettingsState -> String -> ( Maybe String, Html Msg )
+viewSettings language state videoId =
+    ( Nothing
+    , let
+        wakeVideoError =
+            if state.wakeVideoIdError then
+                Just language.settings.videoUrlInvalid
+
+            else
+                Nothing
+      in
+      Html.div []
+        [ Html.nav []
+            [ backToOverview language ]
+        , h1 [] [] [ Html.text language.settings.title ]
+        , textInput language.settings.videoUrlLabel state.wakeVideoIdField SetWakeVideoUrl wakeVideoError
+        , viewVideo videoId
+        ]
+    )
+
+
 linkButton : String -> Route -> Html Msg
 linkButton text route =
     styledNode
@@ -1106,16 +1221,7 @@ toolbar items =
     Html.div
         [ css
             [ Css.margin2 (rem 1) zero
-            , Css.displayFlex
-            , Global.children
-                [ Global.everything
-                    [ Global.adjacentSiblings
-                        [ Global.everything
-                            [ Css.marginLeft (rem 0.5)
-                            ]
-                        ]
-                    ]
-                ]
+            , toolbarSpacingStyle
             ]
         ]
         items
@@ -1234,6 +1340,34 @@ h2 styles attributes children =
         children
 
 
+textInput : String -> String -> (String -> Msg) -> Maybe String -> Html Msg
+textInput label value onInput maybeError =
+    Html.label [ css [ Css.displayFlex, Css.flexDirection Css.column, Css.alignItems Css.start ] ]
+        (Html.text label
+            :: (case maybeError of
+                    Just error ->
+                        [ Html.span [ css [ Css.color (Css.rgb 255 0 0) ] ] [ Html.text error ] ]
+
+                    Nothing ->
+                        -- Do note remove this element, or the input will lose focus.
+                        [ Html.span [ css [ Css.display Css.none ] ] [] ]
+               )
+            ++ [ Html.input
+                    [ Attributes.type_ "text"
+                    , Attributes.value value
+                    , Events.onInput onInput
+                    , css
+                        [ bodyFontStyle
+                        , Css.fontSize Css.inherit
+                        , Css.width (rem 20)
+                        , Css.padding (rem 0.5)
+                        ]
+                    ]
+                    []
+               ]
+        )
+
+
 styledNode : (List (Html.Attribute Msg) -> List (Html Msg) -> Html Msg) -> List Css.Style -> List (Html.Attribute Msg) -> List (Html Msg) -> Html Msg
 styledNode tag styles attributes children =
     tag
@@ -1271,6 +1405,22 @@ linkUnstyle =
     Css.batch
         [ Css.textDecoration Css.none
         , Css.color (Css.hsl 0 0 0)
+        ]
+
+
+toolbarSpacingStyle : Css.Style
+toolbarSpacingStyle =
+    Css.batch
+        [ Css.displayFlex
+        , Global.children
+            [ Global.everything
+                [ Global.adjacentSiblings
+                    [ Global.everything
+                        [ Css.marginLeft (rem 0.5)
+                        ]
+                    ]
+                ]
+            ]
         ]
 
 
