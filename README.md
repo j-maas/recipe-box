@@ -35,10 +35,12 @@ To build everything, run `npm run build` and deploy the `dist` folder.
   - [ ] Add indicator to top of files that explains how to view the recipes for people who do not know what to do with the files.
 - Overview
   - [ ] Filter recipes.
+  - [ ] Search by ingredient.
 - Recipe
   - [x] Indicate how many ingredients there are in ingredient heading.
   - [x] Show quantities in method. This is helpful when assembling ingredients while cooking.
   - [ ] Highlight occurrences of ingredients on hover.
+  - [ ] Prevent display from turning off while cooking. (Wake Lock API (in draft) is only reasonable implementation.)
   - [ ] Allow setting portions.
   - [ ] Embed timers.
   - [ ] Instead of brute deletion, have a bin to protect against accidental deletion.
@@ -47,9 +49,13 @@ To build everything, run `npm run build` and deploy the `dist` folder.
 - Editing
   - [ ] Add instructions to edit page, explaining the syntax.
   - [ ] Detect when recipe already exists and offer renaming.
+  - [ ] Renaming a recipe should not leave the old one.
 - Syntax
-  - [ ] Improve error messages.
+  - [x] Improve error messages.
+  - [ ] Allow no space between numbers and units.
+  - [ ] Prevent multiple repetitions of context explanations. (E.g., when a quantity is empty, there is a problem for an expected float and an expected text that are listed separately.)
   - [ ] Highlight errors in textarea. (See https://codersblock.com/blog/highlight-text-inside-a-textarea/)
   - [ ] Allow named sections representing steps that have individual ingredient lists for preparation.
+- [ ] Increase font size slightly.
 - [ ] Fix highlight on real button differing from link button.
 - [ ] Host fonts, instead of fetching them from Google.
