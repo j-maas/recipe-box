@@ -5,6 +5,8 @@ import Browser.Navigation as Navigation
 import Css exposing (auto, num, pct, rem, zero)
 import Css.Global as Global
 import Dict exposing (Dict)
+import Embed.Youtube
+import Embed.Youtube.Attributes
 import Html.Styled as Html exposing (Html)
 import Html.Styled.Attributes as Attributes exposing (css)
 import Html.Styled.Events as Events
@@ -45,6 +47,7 @@ type alias State =
     { recipes : RecipeStore
     , recipeChecks : Dict String (Set String)
     , shoppingList : ShoppingList
+    , wakeVideoId : String
     }
 
 
@@ -56,7 +59,7 @@ type alias ShoppingList =
 
 type Screen
     = Overview
-    | Recipe Recipe
+    | Recipe Recipe { showWakeVideo : Bool }
     | Edit { code : String, failure : Maybe RecipeParser.Failure }
     | Shopping
 
@@ -100,6 +103,7 @@ init flags url key =
                     flags.recipeChecks
                     |> Dict.fromList
             , shoppingList = shoppingList
+            , wakeVideoId = "14Cf79j92xA"
             }
     in
     ( { key = key
@@ -121,6 +125,7 @@ type Msg
     | ClearShoppingList
     | UpdateCheckOnRecipe String String Bool
     | ClearRecipeChecks String
+    | ToggleVideo
     | SwitchLanguage String
     | UrlChanged Url
     | LinkClicked Browser.UrlRequest
@@ -344,6 +349,20 @@ update msg model =
             , saveRecipeChecksCmd title Set.empty
             )
 
+        ToggleVideo ->
+            let
+                newScreen =
+                    case model.screen of
+                        Recipe recipe options ->
+                            Recipe recipe { options | showWakeVideo = not options.showWakeVideo }
+
+                        _ ->
+                            model.screen
+            in
+            ( { model | screen = newScreen }
+            , Cmd.none
+            )
+
         SwitchLanguage code ->
             ( { model
                 | language =
@@ -384,7 +403,7 @@ screenFromRoute state route =
             Dict.get title state.recipes
                 |> Maybe.map
                     (\( recipe, _ ) ->
-                        Recipe (Recipe.from title recipe)
+                        Recipe (Recipe.from title recipe) { showWakeVideo = False }
                     )
 
         NewRoute ->
@@ -518,7 +537,7 @@ view model =
                 Overview ->
                     viewOverview model.language (Dict.keys state.recipes)
 
-                Recipe recipe ->
+                Recipe recipe options ->
                     let
                         title =
                             Recipe.title recipe
@@ -526,7 +545,13 @@ view model =
                         recipeChecks =
                             Dict.get title model.state.recipeChecks
                     in
-                    viewRecipe model.language recipe recipeChecks
+                    viewRecipe model.language
+                        recipe
+                        { maybeChecks = recipeChecks
+                        , showVideo = options.showWakeVideo
+                        , videoId =
+                            state.wakeVideoId
+                        }
 
                 Edit { code, failure } ->
                     viewEditRecipe model.language code failure
@@ -651,8 +676,15 @@ recipeLinkStyle =
         ]
 
 
-viewRecipe : Language -> Recipe -> Maybe (Set String) -> ( Maybe String, Html Msg )
-viewRecipe language recipe maybeChecks =
+type alias RecipeViewOptions =
+    { maybeChecks : Maybe (Set String)
+    , showVideo : Bool
+    , videoId : String
+    }
+
+
+viewRecipe : Language -> Recipe -> RecipeViewOptions -> ( Maybe String, Html Msg )
+viewRecipe language recipe options =
     let
         title =
             Recipe.title recipe
@@ -663,7 +695,7 @@ viewRecipe language recipe maybeChecks =
                 |> IngredientMap.fromIngredients
 
         checks =
-            maybeChecks |> Maybe.withDefault Set.empty
+            options.maybeChecks |> Maybe.withDefault Set.empty
 
         ingredientsView =
             viewIngredientList
@@ -713,6 +745,40 @@ viewRecipe language recipe maybeChecks =
                 [ linkButton language.recipe.edit (EditRoute <| Recipe.title recipe)
                 , button [] language.recipe.delete (DeleteRecipe <| Recipe.title recipe)
                 ]
+            , details [ Css.marginTop (rem 1), Css.marginBottom (rem 1) ]
+                []
+                { summary = ( [], [ Html.text "More options" ] )
+                , children =
+                    [ Html.div [ css [ Css.marginTop (rem 0.5) ] ]
+                        ([ p [] [] [ Html.text "Keep your screen on by playing a video. After hitting play, you can close the options. The video will play in the background in a loop." ]
+                         , toolbar
+                            [ button []
+                                (if options.showVideo then
+                                    "Hide video"
+
+                                 else
+                                    "Load video"
+                                )
+                                ToggleVideo
+                            ]
+                         ]
+                            ++ (if options.showVideo then
+                                    [ Html.div [ css [ Css.display Css.block ] ]
+                                        [ Embed.Youtube.fromString options.videoId
+                                            |> Embed.Youtube.attributes
+                                                [ Embed.Youtube.Attributes.loop
+                                                ]
+                                            |> Embed.Youtube.toHtml
+                                            |> Html.fromUnstyled
+                                        ]
+                                    ]
+
+                                else
+                                    []
+                               )
+                        )
+                    ]
+                }
             ]
         , Html.article
             []
