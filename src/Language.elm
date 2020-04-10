@@ -50,8 +50,8 @@ fromString code =
 available : Dict String { name : String, content : Language a }
 available =
     Dict.fromList
-        [ ( "en", { name = "English", content = english } )
-        , ( "de", { name = "Deutsch", content = deutsch } )
+        [ ( "en", { name = "🇺🇸 English", content = english } )
+        , ( "de", { name = "🇩🇪 Deutsch", content = deutsch } )
         ]
 
 
