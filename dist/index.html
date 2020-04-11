@@ -61,9 +61,7 @@
         }
 
         var settingsKey = "settings";
-        var settings = JSON.parse(localStorage.getItem(settingsKey)) || {
-            wakeVideoId: null
-        };
+        var settings = JSON.parse(localStorage.getItem(settingsKey));
         console.info("Loaded settings:", settings);
 
         var app = Elm.Main.init({

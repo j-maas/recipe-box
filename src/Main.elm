@@ -50,6 +50,17 @@ type alias State =
     , recipeChecks : Dict String (Set String)
     , shoppingList : ShoppingList
     , wakeVideoId : String
+    , nextCloud : Maybe NextCloudState
+    }
+
+
+type alias NextCloudState =
+    { server : String
+    , credentials :
+        Maybe
+            { user : String
+            , appPassword : String
+            }
     }
 
 
@@ -70,6 +81,11 @@ type Screen
 type alias SettingsState =
     { wakeVideoIdField : String
     , wakeVideoIdError : Bool
+    , nextCloud :
+        { serverField : String
+        , error : Bool
+        , user : Maybe String
+        }
     }
 
 
@@ -81,7 +97,19 @@ type alias Flags =
     { recipes : List String
     , recipeChecks : List ( String, List String )
     , shoppingList : PortShoppingList
-    , settings : { wakeVideoId : Maybe String }
+    , settings :
+        Maybe
+            { wakeVideoId : Maybe String
+            , nextCloud :
+                Maybe
+                    { server : String
+                    , credentials :
+                        Maybe
+                            { user : String
+                            , appPassword : String
+                            }
+                    }
+            }
     , language : String
     }
 
@@ -105,6 +133,16 @@ init flags url key =
             , checked = flags.shoppingList.checked |> Set.fromList
             }
 
+        settings =
+            flags.settings
+                |> Maybe.withDefault
+                    { wakeVideoId = Nothing
+                    , nextCloud = Nothing
+                    }
+
+        nextCloud =
+            settings.nextCloud
+
         state =
             { recipes = recipes
             , recipeChecks =
@@ -113,7 +151,8 @@ init flags url key =
                     flags.recipeChecks
                     |> Dict.fromList
             , shoppingList = shoppingList
-            , wakeVideoId = flags.settings.wakeVideoId |> Maybe.withDefault "14Cf79j92xA"
+            , wakeVideoId = settings.wakeVideoId |> Maybe.withDefault "14Cf79j92xA"
+            , nextCloud = nextCloud
             }
     in
     ( { key = key
@@ -137,6 +176,7 @@ type Msg
     | ClearRecipeChecks String
     | ToggleVideo
     | SetWakeVideoUrl String
+    | SetNextCloudServer String
     | SwitchLanguage String
     | UrlChanged Url
     | LinkClicked Browser.UrlRequest
@@ -444,6 +484,79 @@ update msg model =
             in
             ( newModel, cmd )
 
+        SetNextCloudServer server ->
+            let
+                state =
+                    model.state
+
+                newServer =
+                    TypedUrl.parse server
+                        |> Maybe.map .authority
+                        |> Maybe.map (String.join ".")
+            in
+            case newServer of
+                Just authority ->
+                    let
+                        newNextCloud =
+                            case state.nextCloud of
+                                Just nc ->
+                                    { nc | server = authority }
+
+                                Nothing ->
+                                    { server = authority, credentials = Nothing }
+
+                        newScreen =
+                            case model.screen of
+                                Settings s ->
+                                    let
+                                        oldNextCloud =
+                                            s.nextCloud
+                                    in
+                                    Settings
+                                        { s
+                                            | nextCloud =
+                                                { oldNextCloud
+                                                    | serverField = server
+                                                    , error = False
+                                                }
+                                        }
+
+                                _ ->
+                                    model.screen
+                    in
+                    ( { model
+                        | state =
+                            { state
+                                | nextCloud = Just newNextCloud
+                            }
+                        , screen = newScreen
+                      }
+                    , Cmd.none
+                    )
+
+                Nothing ->
+                    let
+                        newScreen =
+                            case model.screen of
+                                Settings s ->
+                                    let
+                                        oldNextCloud =
+                                            s.nextCloud
+                                    in
+                                    Settings
+                                        { s
+                                            | nextCloud =
+                                                { oldNextCloud
+                                                    | serverField = server
+                                                    , error = True
+                                                }
+                                        }
+
+                                _ ->
+                                    model.screen
+                    in
+                    ( { model | screen = newScreen }, Cmd.none )
+
         SwitchLanguage code ->
             ( { model
                 | language =
@@ -502,11 +615,27 @@ screenFromRoute state route =
             Just Shopping
 
         SettingsRoute ->
+            let
+                nextCloud =
+                    state.nextCloud
+                        |> Maybe.map
+                            (\nc ->
+                                { serverField = "https://" ++ nc.server
+                                , error = False
+                                , user = nc.credentials |> Maybe.map .user
+                                }
+                            )
+                        |> Maybe.withDefault
+                            { serverField = ""
+                            , error = False
+                            , user = Nothing
+                            }
+            in
             Just <|
                 Settings
                     { wakeVideoIdError = False
-                    , wakeVideoIdField =
-                        "https://youtu.be/" ++ state.wakeVideoId
+                    , wakeVideoIdField = "https://youtu.be/" ++ state.wakeVideoId
+                    , nextCloud = nextCloud
                     }
 
 
@@ -1167,13 +1296,44 @@ viewSettings language state videoId =
 
             else
                 Nothing
+
+        wakeVideoSetting =
+            Html.div []
+                [ textInput language.settings.videoUrlLabel state.wakeVideoIdField SetWakeVideoUrl wakeVideoError
+                , viewVideo videoId
+                ]
+
+        nextCloudSetting =
+            let
+                error =
+                    if state.nextCloud.error then
+                        Just "The URL is invalid."
+
+                    else
+                        Nothing
+            in
+            textInput "NextCloud Server" state.nextCloud.serverField SetNextCloudServer error
       in
       Html.div []
         [ Html.nav []
             [ backToOverview language ]
         , h1 [] [] [ Html.text language.settings.title ]
-        , textInput language.settings.videoUrlLabel state.wakeVideoIdField SetWakeVideoUrl wakeVideoError
-        , viewVideo videoId
+        , Html.div
+            [ css
+                [ Css.displayFlex
+                , Css.flexDirection Css.column
+                , Global.children
+                    [ Global.everything
+                        [ Global.adjacentSiblings
+                            [ Global.everything
+                                [ Css.marginTop (rem 1)
+                                ]
+                            ]
+                        ]
+                    ]
+                ]
+            ]
+            [ wakeVideoSetting, nextCloudSetting ]
         ]
     )
 

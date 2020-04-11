@@ -44,7 +44,7 @@ To build everything, run `npm run build` and deploy the `dist` folder.
   - [ ] Highlight occurrences of ingredients on hover.
   - [ ] Prevent display from turning off while cooking. (Wake Lock API (in draft) is only reasonable implementation.)
     - [x] Workaround: Allow playing a soothing YouTube video in a loop.
-    - [ ] Offer customization of what video to play.
+    - [x] Offer customization of what video to play.
   - [ ] Allow setting portions.
   - [ ] Embed timers.
   - [ ] Instead of brute deletion, have a bin to protect against accidental deletion.
@@ -60,6 +60,8 @@ To build everything, run `npm run build` and deploy the `dist` folder.
   - [ ] Prevent multiple repetitions of context explanations. (E.g., when a quantity is empty, there is a problem for an expected float and an expected text that are listed separately.)
   - [ ] Highlight errors in textarea. (See https://codersblock.com/blog/highlight-text-inside-a-textarea/)
   - [ ] Allow named sections representing steps that have individual ingredient lists for preparation.
+- Settings
+  - [ ] Offer reset to default value.
 - [ ] Make it work offline. (Using a service worker.)
 - [x] Increase font size slightly.
 - [ ] Fix highlight on real button differing from link button.
