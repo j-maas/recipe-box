@@ -97,20 +97,22 @@ type alias Flags =
     { recipes : List String
     , recipeChecks : List ( String, List String )
     , shoppingList : PortShoppingList
-    , settings :
+    , settings : Maybe JsonSettings
+    , language : String
+    }
+
+
+type alias JsonSettings =
+    { wakeVideoId : Maybe String
+    , nextCloud :
         Maybe
-            { wakeVideoId : Maybe String
-            , nextCloud :
+            { server : String
+            , credentials :
                 Maybe
-                    { server : String
-                    , credentials :
-                        Maybe
-                            { user : String
-                            , appPassword : String
-                            }
+                    { user : String
+                    , appPassword : String
                     }
             }
-    , language : String
     }
 
 
@@ -448,8 +450,12 @@ update msg model =
                 ( newModel, cmd ) =
                     case maybeId of
                         Just id ->
+                            let
+                                newState =
+                                    { state | wakeVideoId = id }
+                            in
                             ( { model
-                                | state = { state | wakeVideoId = id }
+                                | state = newState
                                 , screen =
                                     case model.screen of
                                         Settings s ->
@@ -462,7 +468,7 @@ update msg model =
                                         _ ->
                                             model.screen
                               }
-                            , saveSettings { wakeVideoId = id }
+                            , saveSettingsCmd newState
                             )
 
                         Nothing ->
@@ -505,6 +511,11 @@ update msg model =
                                 Nothing ->
                                     { server = authority, credentials = Nothing }
 
+                        newState =
+                            { state
+                                | nextCloud = Just newNextCloud
+                            }
+
                         newScreen =
                             case model.screen of
                                 Settings s ->
@@ -525,13 +536,10 @@ update msg model =
                                     model.screen
                     in
                     ( { model
-                        | state =
-                            { state
-                                | nextCloud = Just newNextCloud
-                            }
+                        | state = newState
                         , screen = newScreen
                       }
-                    , Cmd.none
+                    , saveSettingsCmd newState
                     )
 
                 Nothing ->
@@ -742,7 +750,15 @@ port saveShoppingList : PortShoppingList -> Cmd msg
 port saveLanguage : String -> Cmd msg
 
 
-port saveSettings : { wakeVideoId : String } -> Cmd msg
+saveSettingsCmd : State -> Cmd msg
+saveSettingsCmd state =
+    saveSettings
+        { wakeVideoId = Just state.wakeVideoId
+        , nextCloud = state.nextCloud
+        }
+
+
+port saveSettings : JsonSettings -> Cmd msg
 
 
 subscriptions : Model -> Sub Msg
