@@ -5,6 +5,7 @@ import Browser.Navigation as Navigation
 import Css exposing (auto, num, pct, rem, zero)
 import Css.Global as Global
 import Dict exposing (Dict)
+import Dropbox
 import Embed.Youtube
 import Embed.Youtube.Attributes
 import Html.Styled as Html exposing (Html)
@@ -13,9 +14,9 @@ import Html.Styled.Events as Events
 import Http
 import Ingredient exposing (Ingredient)
 import IngredientMap exposing (IngredientMap)
+import Json.Decode as Decode
 import Language
 import List.Extra as List
-import NextCloud
 import Recipe exposing (Recipe)
 import RecipeParser
 import Set exposing (Set)
@@ -52,34 +53,13 @@ type alias State =
     , recipeChecks : Dict String (Set String)
     , shoppingList : ShoppingList
     , wakeVideoId : String
-    , nextCloud : Maybe NextCloudState
-    }
-
-
-type alias NextCloudState =
-    { server : NextCloud.Server
-    , credentials : Credentials
+    , dropbox : Maybe Credentials
     }
 
 
 type Credentials
-    = MissingCredentials
-    | LoggingInto NextCloud.StartLoginResponse
-    | LoggedIn
-        { user : String
-        , appPassword : String
-        }
-    | Error Http.Error
-
-
-extractCredentials : Credentials -> Maybe { user : String, appPassword : String }
-extractCredentials creds =
-    case creds of
-        LoggedIn info ->
-            Just info
-
-        _ ->
-            Nothing
+    = LoggedIn Dropbox.UserAuth
+    | CredentialsError
 
 
 type alias ShoppingList =
@@ -99,8 +79,7 @@ type Screen
 type alias SettingsState =
     { wakeVideoIdField : String
     , wakeVideoIdError : Bool
-    , nextCloudField : String
-    , nextCloudError : Bool
+    , dropboxError : Bool
     }
 
 
@@ -119,15 +98,7 @@ type alias Flags =
 
 type alias JsonSettings =
     { wakeVideoId : Maybe String
-    , nextCloud :
-        Maybe
-            { server : String
-            , credentials :
-                Maybe
-                    { user : String
-                    , appPassword : String
-                    }
-            }
+    , dropbox : Maybe Decode.Value
     }
 
 
@@ -154,19 +125,16 @@ init flags url key =
             flags.settings
                 |> Maybe.withDefault
                     { wakeVideoId = Nothing
-                    , nextCloud = Nothing
+                    , dropbox = Nothing
                     }
 
-        nextCloud =
-            settings.nextCloud
-                |> Maybe.map
-                    (\nc ->
-                        { server = nc.server |> NextCloud.serverFromAuthority
-                        , credentials =
-                            nc.credentials
-                                |> Maybe.map LoggedIn
-                                |> Maybe.withDefault MissingCredentials
-                        }
+        dropbox =
+            settings.dropbox
+                |> Maybe.andThen
+                    (\raw ->
+                        Decode.decodeValue Dropbox.decodeUserAuth raw
+                            |> Result.toMaybe
+                            |> Maybe.map LoggedIn
                     )
 
         state =
@@ -178,13 +146,16 @@ init flags url key =
                     |> Dict.fromList
             , shoppingList = shoppingList
             , wakeVideoId = settings.wakeVideoId |> Maybe.withDefault "14Cf79j92xA"
-            , nextCloud = nextCloud
+            , dropbox = dropbox
             }
+
+        ( screen, newState ) =
+            applyUrl state url
     in
     ( { key = key
-      , state = state
+      , state = newState
       , language = Language.fromString flags.language
-      , screen = parseRoute url |> screenFromRoute state |> Maybe.withDefault Overview
+      , screen = screen
       }
     , Cmd.none
     )
@@ -202,10 +173,8 @@ type Msg
     | ClearRecipeChecks String
     | ToggleVideo
     | SetWakeVideoUrl String
-    | SetNextCloudServer String
     | SwitchLanguage String
     | StartLogin
-    | StartLoginResponsed (Result Http.Error NextCloud.StartLoginResponse)
     | UrlChanged Url
     | LinkClicked Browser.UrlRequest
 
@@ -214,7 +183,7 @@ update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     let
         toScreen route =
-            screenFromRoute model.state route |> Maybe.withDefault model.screen
+            screenFromRoute model.state route
 
         goTo route =
             Navigation.pushUrl model.key (stringFromRoute route)
@@ -516,64 +485,6 @@ update msg model =
             in
             ( newModel, cmd )
 
-        SetNextCloudServer url ->
-            let
-                state =
-                    model.state
-
-                newServer =
-                    NextCloud.serverFromUrl url
-            in
-            case newServer of
-                Just server ->
-                    let
-                        newNextCloud =
-                            case state.nextCloud of
-                                Just nc ->
-                                    { nc | server = server }
-
-                                Nothing ->
-                                    { server = server, credentials = MissingCredentials }
-
-                        newState =
-                            { state
-                                | nextCloud = Just newNextCloud
-                            }
-
-                        newScreen =
-                            case model.screen of
-                                Settings s ->
-                                    Settings
-                                        { s
-                                            | nextCloudField = url
-                                            , nextCloudError = False
-                                        }
-
-                                _ ->
-                                    model.screen
-                    in
-                    ( { model
-                        | state = newState
-                        , screen = newScreen
-                      }
-                    , saveSettingsCmd newState
-                    )
-
-                Nothing ->
-                    let
-                        newScreen =
-                            case model.screen of
-                                Settings s ->
-                                    Settings
-                                        { s
-                                            | nextCloudField = url
-                                        }
-
-                                _ ->
-                                    model.screen
-                    in
-                    ( { model | screen = newScreen }, Cmd.none )
-
         SwitchLanguage code ->
             ( { model
                 | language =
@@ -586,37 +497,51 @@ update msg model =
 
         StartLogin ->
             let
+                {-
+                   deploymentUrl =
+                       { protocol = Url.Https
+                       , host = "y0hy0h.github.io"
+                       , port_ = Nothing
+                       , path = "/recipe-box"
+                       , query = Nothing
+                       , fragment = Nothing
+                       }
+                -}
+                testUrl =
+                    { protocol = Url.Http
+                    , host = "localhost"
+                    , port_ = Just 8000
+                    , path = ""
+                    , query = Nothing
+                    , fragment = Nothing
+                    }
+
                 cmd =
-                    model.state.nextCloud
-                        |> Maybe.map
-                            (\nextCloud ->
-                                NextCloud.startLogin nextCloud.server StartLoginResponsed
-                            )
-                        |> Maybe.withDefault Cmd.none
+                    Dropbox.authorize
+                        { clientId = "916swzhdm7w2eak"
+                        , state = Nothing -- TODO: Prevent CSRF with state
+                        , requireRole = Nothing
+                        , forceReapprove = False
+                        , disableSignup = False
+                        , locale = Nothing
+                        , forceReauthentication = False
+                        }
+                        testUrl
             in
             ( model, cmd )
 
-        StartLoginResponsed response ->
-            let
-                state =
-                    model.state
-
-                newNextCloud =
-                    state.nextCloud
-                        |> Maybe.map
-                            (\oldNextCloud ->
-                                case response of
-                                    Ok startLogin ->
-                                        { oldNextCloud | credentials = LoggingInto startLogin }
-
-                                    Err error ->
-                                        { oldNextCloud | credentials = Error error }
-                            )
-            in
-            ( { model | state = { state | nextCloud = newNextCloud } }, Cmd.none )
-
         UrlChanged url ->
-            ( { model | screen = toScreen (parseRoute url) }, Cmd.none )
+            let
+                ( newScreen, newState ) =
+                    applyUrl model.state url
+
+                newModel =
+                    { model
+                        | state = newState
+                        , screen = newScreen
+                    }
+            in
+            ( newModel, Cmd.none )
 
         LinkClicked request ->
             case request of
@@ -636,11 +561,11 @@ type Route
     | SettingsRoute
 
 
-screenFromRoute : State -> Route -> Maybe Screen
+screenFromRoute : State -> Route -> Screen
 screenFromRoute state route =
     case route of
         OverviewRoute ->
-            Just Overview
+            Overview
 
         RecipeRoute title ->
             Dict.get title state.recipes
@@ -648,9 +573,10 @@ screenFromRoute state route =
                     (\( recipe, _ ) ->
                         Recipe (Recipe.from title recipe) { showWakeVideo = False }
                     )
+                |> Maybe.withDefault Overview
 
         NewRoute ->
-            Just <| Edit { code = "", failure = Nothing }
+            Edit { code = "", failure = Nothing }
 
         EditRoute title ->
             Dict.get title state.recipes
@@ -658,22 +584,17 @@ screenFromRoute state route =
                     (\( _, code ) ->
                         Edit { code = code, failure = Nothing }
                     )
+                |> Maybe.withDefault Overview
 
         ShoppingListRoute ->
-            Just Shopping
+            Shopping
 
         SettingsRoute ->
-            Just <|
-                Settings
-                    { wakeVideoIdField = "https://youtu.be/" ++ state.wakeVideoId
-                    , wakeVideoIdError = False
-                    , nextCloudField =
-                        state.nextCloud
-                            |> Maybe.map .server
-                            |> Maybe.map (\server -> "https://" ++ NextCloud.authorityFromServer server)
-                            |> Maybe.withDefault ""
-                    , nextCloudError = False
-                    }
+            Settings
+                { wakeVideoIdField = "https://youtu.be/" ++ state.wakeVideoId
+                , wakeVideoIdError = False
+                , dropboxError = False
+                }
 
 
 stringFromRoute : Route -> String
@@ -698,7 +619,39 @@ stringFromRoute route =
             "#settings"
 
 
-parseRoute : Url -> Route
+type ParsedRoute
+    = ParsedRoute Route
+    | DropboxAuth Dropbox.AuthorizeResult
+
+
+parseUrl : Url -> ParsedRoute
+parseUrl url =
+    case parseRoute url of
+        Just route ->
+            ParsedRoute route
+
+        Nothing ->
+            Dropbox.parseAuthorizeResult url
+                |> Maybe.map DropboxAuth
+                |> Maybe.withDefault (ParsedRoute OverviewRoute)
+
+
+applyUrl : State -> Url -> ( Screen, State )
+applyUrl state url =
+    case parseUrl url of
+        ParsedRoute route ->
+            ( screenFromRoute state route, state )
+
+        DropboxAuth result ->
+            case result of
+                Dropbox.AuthorizeOk { userAuth } ->
+                    ( screenFromRoute state SettingsRoute, { state | dropbox = Just (LoggedIn userAuth) } )
+
+                _ ->
+                    ( screenFromRoute state SettingsRoute, { state | dropbox = Just CredentialsError } )
+
+
+parseRoute : Url -> Maybe Route
 parseRoute url =
     url.fragment
         |> Maybe.andThen
@@ -731,7 +684,6 @@ parseRoute url =
                 else
                     Nothing
             )
-        |> Maybe.withDefault OverviewRoute
 
 
 port saveRecipe : { title : String, code : String } -> Cmd msg
@@ -782,18 +734,21 @@ port saveLanguage : String -> Cmd msg
 saveSettingsCmd : State -> Cmd msg
 saveSettingsCmd state =
     let
-        jsonNextCloud =
-            state.nextCloud
-                |> Maybe.map
-                    (\nextCloud ->
-                        { server = nextCloud.server |> NextCloud.authorityFromServer
-                        , credentials = extractCredentials nextCloud.credentials
-                        }
+        jsonDropbox =
+            state.dropbox
+                |> Maybe.andThen
+                    (\credentials ->
+                        case credentials of
+                            LoggedIn userAuth ->
+                                Just (Dropbox.encodeUserAuth userAuth)
+
+                            _ ->
+                                Nothing
                     )
     in
     saveSettings
         { wakeVideoId = Just state.wakeVideoId
-        , nextCloud = jsonNextCloud
+        , dropbox = jsonDropbox
         }
 
 
@@ -1358,55 +1313,20 @@ viewSettings language settingsState state =
                 , viewVideo state.wakeVideoId
                 ]
 
-        nextCloudSetting =
-            let
-                error =
-                    if settingsState.nextCloudError then
-                        Just "The URL is invalid."
-
-                    else
-                        Nothing
-
-                serverSetting =
-                    textInput "NextCloud Server" settingsState.nextCloudField SetNextCloudServer error
-            in
+        dropboxSetting =
             Html.div []
-                (serverSetting
-                    :: (case state.nextCloud of
-                            Just nextCloud ->
-                                case nextCloud.credentials of
-                                    MissingCredentials ->
-                                        [ button [] "Start login" StartLogin ]
+                (case state.dropbox of
+                    Just credentials ->
+                        case credentials of
+                            LoggedIn info ->
+                                [ Html.text "Logged in" ]
 
-                                    LoggingInto logInfo ->
-                                        [ Html.text ("Log in at " ++ logInfo.link) ]
+                            CredentialsError ->
+                                [ Html.text "An error occurred."
+                                ]
 
-                                    LoggedIn info ->
-                                        [ Html.text ("Logged in as " ++ info.user) ]
-
-                                    Error err ->
-                                        [ Html.text
-                                            (case err of
-                                                Http.BadUrl url ->
-                                                    "Bad url: " ++ url
-
-                                                Http.Timeout ->
-                                                    "Timeout"
-
-                                                Http.NetworkError ->
-                                                    "Network error"
-
-                                                Http.BadStatus code ->
-                                                    "Bad status" ++ String.fromInt code
-
-                                                Http.BadBody e ->
-                                                    "Bad body:" ++ e
-                                            )
-                                        ]
-
-                            Nothing ->
-                                []
-                       )
+                    Nothing ->
+                        [ button [] "Log into Dropbox" StartLogin ]
                 )
       in
       Html.div []
@@ -1428,7 +1348,7 @@ viewSettings language settingsState state =
                     ]
                 ]
             ]
-            [ wakeVideoSetting, nextCloudSetting ]
+            [ wakeVideoSetting, dropboxSetting ]
         ]
     )
 
