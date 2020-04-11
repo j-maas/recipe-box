@@ -10,10 +10,12 @@ import Embed.Youtube.Attributes
 import Html.Styled as Html exposing (Html)
 import Html.Styled.Attributes as Attributes exposing (css)
 import Html.Styled.Events as Events
+import Http
 import Ingredient exposing (Ingredient)
 import IngredientMap exposing (IngredientMap)
 import Language
 import List.Extra as List
+import NextCloud
 import Recipe exposing (Recipe)
 import RecipeParser
 import Set exposing (Set)
@@ -55,13 +57,29 @@ type alias State =
 
 
 type alias NextCloudState =
-    { server : String
-    , credentials :
-        Maybe
-            { user : String
-            , appPassword : String
-            }
+    { server : NextCloud.Server
+    , credentials : Credentials
     }
+
+
+type Credentials
+    = MissingCredentials
+    | LoggingInto NextCloud.StartLoginResponse
+    | LoggedIn
+        { user : String
+        , appPassword : String
+        }
+    | Error Http.Error
+
+
+extractCredentials : Credentials -> Maybe { user : String, appPassword : String }
+extractCredentials creds =
+    case creds of
+        LoggedIn info ->
+            Just info
+
+        _ ->
+            Nothing
 
 
 type alias ShoppingList =
@@ -81,11 +99,8 @@ type Screen
 type alias SettingsState =
     { wakeVideoIdField : String
     , wakeVideoIdError : Bool
-    , nextCloud :
-        { serverField : String
-        , error : Bool
-        , user : Maybe String
-        }
+    , nextCloudField : String
+    , nextCloudError : Bool
     }
 
 
@@ -144,6 +159,15 @@ init flags url key =
 
         nextCloud =
             settings.nextCloud
+                |> Maybe.map
+                    (\nc ->
+                        { server = nc.server |> NextCloud.serverFromAuthority
+                        , credentials =
+                            nc.credentials
+                                |> Maybe.map LoggedIn
+                                |> Maybe.withDefault MissingCredentials
+                        }
+                    )
 
         state =
             { recipes = recipes
@@ -180,6 +204,8 @@ type Msg
     | SetWakeVideoUrl String
     | SetNextCloudServer String
     | SwitchLanguage String
+    | StartLogin
+    | StartLoginResponsed (Result Http.Error NextCloud.StartLoginResponse)
     | UrlChanged Url
     | LinkClicked Browser.UrlRequest
 
@@ -490,26 +516,24 @@ update msg model =
             in
             ( newModel, cmd )
 
-        SetNextCloudServer server ->
+        SetNextCloudServer url ->
             let
                 state =
                     model.state
 
                 newServer =
-                    TypedUrl.parse server
-                        |> Maybe.map .authority
-                        |> Maybe.map (String.join ".")
+                    NextCloud.serverFromUrl url
             in
             case newServer of
-                Just authority ->
+                Just server ->
                     let
                         newNextCloud =
                             case state.nextCloud of
                                 Just nc ->
-                                    { nc | server = authority }
+                                    { nc | server = server }
 
                                 Nothing ->
-                                    { server = authority, credentials = Nothing }
+                                    { server = server, credentials = MissingCredentials }
 
                         newState =
                             { state
@@ -519,17 +543,10 @@ update msg model =
                         newScreen =
                             case model.screen of
                                 Settings s ->
-                                    let
-                                        oldNextCloud =
-                                            s.nextCloud
-                                    in
                                     Settings
                                         { s
-                                            | nextCloud =
-                                                { oldNextCloud
-                                                    | serverField = server
-                                                    , error = False
-                                                }
+                                            | nextCloudField = url
+                                            , nextCloudError = False
                                         }
 
                                 _ ->
@@ -547,17 +564,9 @@ update msg model =
                         newScreen =
                             case model.screen of
                                 Settings s ->
-                                    let
-                                        oldNextCloud =
-                                            s.nextCloud
-                                    in
                                     Settings
                                         { s
-                                            | nextCloud =
-                                                { oldNextCloud
-                                                    | serverField = server
-                                                    , error = True
-                                                }
+                                            | nextCloudField = url
                                         }
 
                                 _ ->
@@ -574,6 +583,37 @@ update msg model =
               }
             , saveLanguage code
             )
+
+        StartLogin ->
+            let
+                cmd =
+                    model.state.nextCloud
+                        |> Maybe.map
+                            (\nextCloud ->
+                                NextCloud.startLogin nextCloud.server StartLoginResponsed
+                            )
+                        |> Maybe.withDefault Cmd.none
+            in
+            ( model, cmd )
+
+        StartLoginResponsed response ->
+            let
+                state =
+                    model.state
+
+                newNextCloud =
+                    state.nextCloud
+                        |> Maybe.map
+                            (\oldNextCloud ->
+                                case response of
+                                    Ok startLogin ->
+                                        { oldNextCloud | credentials = LoggingInto startLogin }
+
+                                    Err error ->
+                                        { oldNextCloud | credentials = Error error }
+                            )
+            in
+            ( { model | state = { state | nextCloud = newNextCloud } }, Cmd.none )
 
         UrlChanged url ->
             ( { model | screen = toScreen (parseRoute url) }, Cmd.none )
@@ -623,27 +663,16 @@ screenFromRoute state route =
             Just Shopping
 
         SettingsRoute ->
-            let
-                nextCloud =
-                    state.nextCloud
-                        |> Maybe.map
-                            (\nc ->
-                                { serverField = "https://" ++ nc.server
-                                , error = False
-                                , user = nc.credentials |> Maybe.map .user
-                                }
-                            )
-                        |> Maybe.withDefault
-                            { serverField = ""
-                            , error = False
-                            , user = Nothing
-                            }
-            in
             Just <|
                 Settings
-                    { wakeVideoIdError = False
-                    , wakeVideoIdField = "https://youtu.be/" ++ state.wakeVideoId
-                    , nextCloud = nextCloud
+                    { wakeVideoIdField = "https://youtu.be/" ++ state.wakeVideoId
+                    , wakeVideoIdError = False
+                    , nextCloudField =
+                        state.nextCloud
+                            |> Maybe.map .server
+                            |> Maybe.map (\server -> "https://" ++ NextCloud.authorityFromServer server)
+                            |> Maybe.withDefault ""
+                    , nextCloudError = False
                     }
 
 
@@ -752,9 +781,19 @@ port saveLanguage : String -> Cmd msg
 
 saveSettingsCmd : State -> Cmd msg
 saveSettingsCmd state =
+    let
+        jsonNextCloud =
+            state.nextCloud
+                |> Maybe.map
+                    (\nextCloud ->
+                        { server = nextCloud.server |> NextCloud.authorityFromServer
+                        , credentials = extractCredentials nextCloud.credentials
+                        }
+                    )
+    in
     saveSettings
         { wakeVideoId = Just state.wakeVideoId
-        , nextCloud = state.nextCloud
+        , nextCloud = jsonNextCloud
         }
 
 
@@ -804,7 +843,7 @@ view model =
                     viewShoppingList model.language state.recipes state.shoppingList
 
                 Settings s ->
-                    viewSettings model.language s state.wakeVideoId
+                    viewSettings model.language s state
     in
     { title =
         model.language.title
@@ -1302,12 +1341,12 @@ ingredientsFromRecipes recipes selectedRecipes =
         |> List.concatMap (\( parts, _ ) -> Recipe.ingredients parts)
 
 
-viewSettings : Language -> SettingsState -> String -> ( Maybe String, Html Msg )
-viewSettings language state videoId =
+viewSettings : Language -> SettingsState -> State -> ( Maybe String, Html Msg )
+viewSettings language settingsState state =
     ( Nothing
     , let
         wakeVideoError =
-            if state.wakeVideoIdError then
+            if settingsState.wakeVideoIdError then
                 Just language.settings.videoUrlInvalid
 
             else
@@ -1315,20 +1354,60 @@ viewSettings language state videoId =
 
         wakeVideoSetting =
             Html.div []
-                [ textInput language.settings.videoUrlLabel state.wakeVideoIdField SetWakeVideoUrl wakeVideoError
-                , viewVideo videoId
+                [ textInput language.settings.videoUrlLabel settingsState.wakeVideoIdField SetWakeVideoUrl wakeVideoError
+                , viewVideo state.wakeVideoId
                 ]
 
         nextCloudSetting =
             let
                 error =
-                    if state.nextCloud.error then
+                    if settingsState.nextCloudError then
                         Just "The URL is invalid."
 
                     else
                         Nothing
+
+                serverSetting =
+                    textInput "NextCloud Server" settingsState.nextCloudField SetNextCloudServer error
             in
-            textInput "NextCloud Server" state.nextCloud.serverField SetNextCloudServer error
+            Html.div []
+                (serverSetting
+                    :: (case state.nextCloud of
+                            Just nextCloud ->
+                                case nextCloud.credentials of
+                                    MissingCredentials ->
+                                        [ button [] "Start login" StartLogin ]
+
+                                    LoggingInto logInfo ->
+                                        [ Html.text ("Log in at " ++ logInfo.link) ]
+
+                                    LoggedIn info ->
+                                        [ Html.text ("Logged in as " ++ info.user) ]
+
+                                    Error err ->
+                                        [ Html.text
+                                            (case err of
+                                                Http.BadUrl url ->
+                                                    "Bad url: " ++ url
+
+                                                Http.Timeout ->
+                                                    "Timeout"
+
+                                                Http.NetworkError ->
+                                                    "Network error"
+
+                                                Http.BadStatus code ->
+                                                    "Bad status" ++ String.fromInt code
+
+                                                Http.BadBody e ->
+                                                    "Bad body:" ++ e
+                                            )
+                                        ]
+
+                            Nothing ->
+                                []
+                       )
+                )
       in
       Html.div []
         [ Html.nav []
