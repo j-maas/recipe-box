@@ -11,7 +11,6 @@ import Embed.Youtube.Attributes
 import Html.Styled as Html exposing (Html)
 import Html.Styled.Attributes as Attributes exposing (css)
 import Html.Styled.Events as Events
-import Http
 import Ingredient exposing (Ingredient)
 import IngredientMap exposing (IngredientMap)
 import Json.Decode as Decode
@@ -53,6 +52,7 @@ type alias State =
     , shoppingList : ShoppingList
     , wakeVideoId : String
     , dropbox : Maybe Credentials
+    , nonce : Maybe String
     }
 
 
@@ -102,6 +102,7 @@ type alias Flags =
     , shoppingList : PortShoppingList
     , settings : Maybe JsonSettings
     , language : String
+    , nonce : Maybe String
     }
 
 
@@ -162,9 +163,10 @@ init flags url key =
             , shoppingList = shoppingList
             , wakeVideoId = settings.wakeVideoId |> Maybe.withDefault "14Cf79j92xA"
             , dropbox = dropbox
+            , nonce = flags.nonce
             }
 
-        ( screen, newState ) =
+        ( screen, newState, cmd ) =
             applyUrl state url
     in
     ( { key = key
@@ -172,7 +174,7 @@ init flags url key =
       , language = Language.fromString flags.language
       , screen = screen
       }
-    , Cmd.none
+    , cmd
     )
 
 
@@ -190,6 +192,7 @@ type Msg
     | SetWakeVideoUrl String
     | SwitchLanguage String
     | StartLogin
+    | NonceGenerated String
     | UrlChanged Url
     | LinkClicked Browser.UrlRequest
 
@@ -522,6 +525,9 @@ update msg model =
             )
 
         StartLogin ->
+            ( model, generateNonce () )
+
+        NonceGenerated nonce ->
             let
                 {-
                    deploymentUrl =
@@ -534,6 +540,10 @@ update msg model =
                        }
                 -}
                 testUrl =
+                    let
+                        _ =
+                            Debug.log "Remove the localhost Dropbox auth redirect!" ()
+                    in
                     { protocol = Url.Http
                     , host = "localhost"
                     , port_ = Just 8000
@@ -545,7 +555,7 @@ update msg model =
                 cmd =
                     Dropbox.authorize
                         { clientId = "916swzhdm7w2eak"
-                        , state = Nothing -- TODO: Prevent CSRF with state
+                        , state = Just nonce
                         , requireRole = Nothing
                         , forceReapprove = False
                         , disableSignup = False
@@ -558,7 +568,7 @@ update msg model =
 
         UrlChanged url ->
             let
-                ( newScreen, newState ) =
+                ( newScreen, newState, cmd ) =
                     applyUrl model.state url
 
                 newModel =
@@ -567,7 +577,7 @@ update msg model =
                         , screen = newScreen
                     }
             in
-            ( newModel, Cmd.none )
+            ( newModel, cmd )
 
         LinkClicked request ->
             case request of
@@ -596,7 +606,7 @@ screenFromRoute state route =
         RecipeRoute title ->
             Dict.get title state.recipes
                 |> Maybe.map
-                    (\{ method, checks } ->
+                    (\{ method } ->
                         Recipe
                             (Recipe.from title method)
                             { showWakeVideo = False
@@ -665,19 +675,42 @@ parseUrl url =
                 |> Maybe.withDefault (ParsedRoute OverviewRoute)
 
 
-applyUrl : State -> Url -> ( Screen, State )
+applyUrl : State -> Url -> ( Screen, State, Cmd Msg )
 applyUrl state url =
     case parseUrl url of
         ParsedRoute route ->
-            ( screenFromRoute state route, state )
+            ( screenFromRoute state route, state, Cmd.none )
 
         DropboxAuth result ->
             case result of
-                Dropbox.AuthorizeOk { userAuth } ->
-                    ( screenFromRoute state SettingsRoute, { state | dropbox = Just (LoggedIn userAuth) } )
+                Dropbox.AuthorizeOk response ->
+                    if response.state == state.nonce then
+                        let
+                            newState =
+                                { state
+                                    | dropbox = Just (LoggedIn response.userAuth)
+                                }
+                        in
+                        ( screenFromRoute state SettingsRoute
+                        , newState
+                        , saveSettingsCmd newState
+                        )
+
+                    else
+                        ( screenFromRoute state SettingsRoute
+                        , { state
+                            | dropbox = Just CredentialsError -- TODO: Inform user about possible attack.
+                          }
+                        , Cmd.none
+                        )
 
                 _ ->
-                    ( screenFromRoute state SettingsRoute, { state | dropbox = Just CredentialsError } )
+                    ( screenFromRoute state SettingsRoute
+                    , { state
+                        | dropbox = Just CredentialsError -- TODO: Explain error to user.
+                      }
+                    , Cmd.none
+                    )
 
 
 parseRoute : Url -> Maybe Route
@@ -784,9 +817,15 @@ saveSettingsCmd state =
 port saveSettings : JsonSettings -> Cmd msg
 
 
+port generateNonce : () -> Cmd msg
+
+
+port nonceGenerated : (String -> msg) -> Sub msg
+
+
 subscriptions : Model -> Sub Msg
 subscriptions _ =
-    Sub.none
+    nonceGenerated NonceGenerated
 
 
 
