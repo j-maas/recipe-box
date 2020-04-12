@@ -17,21 +17,25 @@
 <body>
     <div id="elm"></div>
     <script>
-        var recipes = [];
-        var recipeChecks = [];
+        var recipesDict = {};
         var recipePrefix = "recipe:"
         var checksPrefix = "recipeChecks:"
+        function push(title, key, item) {
+            recipesDict[title] = recipesDict[title] || { code: null, checks: [] };
+            recipesDict[title][key] = item;
+        }
         for (var i = 0; i < localStorage.length; i++) {
             var key = localStorage.key(i);
             if (key.startsWith(recipePrefix)) {
-                recipes.push(localStorage.getItem(key));
+                var title = key.slice(recipePrefix.length);
+                push(title, "code", localStorage.getItem(key));
             } else if (key.startsWith(checksPrefix)) {
                 var title = key.slice(checksPrefix.length);
-                recipeChecks.push([title, JSON.parse(localStorage.getItem(key))]);
+                push(title, "checks", JSON.parse(localStorage.getItem(key)));
             }
         }
+        var recipes = Object.values(recipesDict);
         console.info("Loaded " + recipes.length + " recipes.");
-        console.info("Loaded check marks for " + recipeChecks.length + " recipes.");
 
         var shoppingListKey = "shoppingList";
         function getShoppingList() {
@@ -68,7 +72,6 @@
             node: document.getElementById('elm'),
             flags: {
                 recipes,
-                recipeChecks,
                 shoppingList,
                 language,
                 settings,

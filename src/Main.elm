@@ -38,8 +38,8 @@ main =
 
 type alias Model =
     { key : Navigation.Key
-    , state : State
     , language : Language
+    , state : State
     , screen : Screen
     }
 
@@ -50,10 +50,20 @@ type alias Language =
 
 type alias State =
     { recipes : RecipeStore
-    , recipeChecks : Dict String (Set String)
     , shoppingList : ShoppingList
     , wakeVideoId : String
     , dropbox : Maybe Credentials
+    }
+
+
+type alias RecipeStore =
+    Dict String RecipeEntry
+
+
+type alias RecipeEntry =
+    { method : Recipe.Parts
+    , code : String
+    , checks : Set String
     }
 
 
@@ -83,13 +93,12 @@ type alias SettingsState =
     }
 
 
-type alias RecipeStore =
-    Dict String ( Recipe.Parts, String )
-
-
 type alias Flags =
-    { recipes : List String
-    , recipeChecks : List ( String, List String )
+    { recipes :
+        List
+            { code : String
+            , checks : List String
+            }
     , shoppingList : PortShoppingList
     , settings : Maybe JsonSettings
     , language : String
@@ -106,14 +115,25 @@ init : Flags -> Url -> Navigation.Key -> ( Model, Cmd Msg )
 init flags url key =
     let
         recipes =
-            List.filterMap
-                (\code ->
-                    RecipeParser.parse code
-                        |> Result.toMaybe
-                        |> Maybe.map (\recipe -> ( recipe, code ))
-                )
-                flags.recipes
-                |> List.map (\( recipe, code ) -> ( Recipe.title recipe, ( Recipe.method recipe, code ) ))
+            flags.recipes
+                |> List.filterMap
+                    (\entry ->
+                        RecipeParser.parse entry.code
+                            |> Result.toMaybe
+                            |> Maybe.map
+                                (\recipe ->
+                                    let
+                                        title =
+                                            Recipe.title recipe
+                                    in
+                                    ( title
+                                    , { method = Recipe.method recipe
+                                      , code = entry.code
+                                      , checks = Set.fromList entry.checks
+                                      }
+                                    )
+                                )
+                    )
                 |> Dict.fromList
 
         shoppingList =
@@ -139,11 +159,6 @@ init flags url key =
 
         state =
             { recipes = recipes
-            , recipeChecks =
-                List.map
-                    (\( title, checks ) -> ( title, Set.fromList checks ))
-                    flags.recipeChecks
-                    |> Dict.fromList
             , shoppingList = shoppingList
             , wakeVideoId = settings.wakeVideoId |> Maybe.withDefault "14Cf79j92xA"
             , dropbox = dropbox
@@ -182,9 +197,6 @@ type Msg
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     let
-        toScreen route =
-            screenFromRoute model.state route
-
         goTo route =
             Navigation.pushUrl model.key (stringFromRoute route)
     in
@@ -227,7 +239,7 @@ update msg model =
                                 title =
                                     Recipe.title recipe
 
-                                parts =
+                                method =
                                     Recipe.method recipe
                             in
                             ( { model
@@ -235,7 +247,10 @@ update msg model =
                                     { state
                                         | recipes =
                                             Dict.insert title
-                                                ( parts, code )
+                                                { method = method
+                                                , code = code
+                                                , checks = Set.empty
+                                                }
                                                 state.recipes
                                     }
                               }
@@ -364,19 +379,21 @@ update msg model =
                         Set.remove
 
                 oldChecks =
-                    Dict.get recipeTitle state.recipeChecks
+                    Dict.get recipeTitle state.recipes
+                        |> Maybe.map .checks
                         |> Maybe.withDefault Set.empty
 
                 newChecks =
                     operation ingredientName oldChecks
 
-                newRecipeChecks =
-                    state.recipeChecks
-                        |> Dict.insert recipeTitle newChecks
+                newRecipes =
+                    state.recipes
+                        |> Dict.update recipeTitle
+                            (Maybe.map (\entry -> { entry | checks = newChecks }))
             in
             ( { model
                 | state =
-                    { state | recipeChecks = newRecipeChecks }
+                    { state | recipes = newRecipes }
               }
             , saveRecipeChecksCmd recipeTitle newChecks
             )
@@ -386,13 +403,18 @@ update msg model =
                 state =
                     model.state
 
-                newRecipeChecks =
-                    state.recipeChecks
-                        |> Dict.remove title
+                newRecipes =
+                    state.recipes
+                        |> Dict.update title
+                            (Maybe.map
+                                (\entry ->
+                                    { entry | checks = Set.empty }
+                                )
+                            )
             in
             ( { model
                 | state =
-                    { state | recipeChecks = newRecipeChecks }
+                    { state | recipes = newRecipes }
               }
             , saveRecipeChecksCmd title Set.empty
             )
@@ -401,8 +423,12 @@ update msg model =
             let
                 newScreen =
                     case model.screen of
-                        Recipe recipe options ->
-                            Recipe recipe { options | showWakeVideo = not options.showWakeVideo }
+                        Recipe title oldOptions ->
+                            let
+                                newOptions =
+                                    { oldOptions | showWakeVideo = not oldOptions.showWakeVideo }
+                            in
+                            Recipe title newOptions
 
                         _ ->
                             model.screen
@@ -570,8 +596,11 @@ screenFromRoute state route =
         RecipeRoute title ->
             Dict.get title state.recipes
                 |> Maybe.map
-                    (\( recipe, _ ) ->
-                        Recipe (Recipe.from title recipe) { showWakeVideo = False }
+                    (\{ method, checks } ->
+                        Recipe
+                            (Recipe.from title method)
+                            { showWakeVideo = False
+                            }
                     )
                 |> Maybe.withDefault Overview
 
@@ -581,7 +610,7 @@ screenFromRoute state route =
         EditRoute title ->
             Dict.get title state.recipes
                 |> Maybe.map
-                    (\( _, code ) ->
+                    (\{ code } ->
                         Edit { code = code, failure = Nothing }
                     )
                 |> Maybe.withDefault Overview
@@ -780,12 +809,14 @@ view model =
                         title =
                             Recipe.title recipe
 
-                        recipeChecks =
-                            Dict.get title model.state.recipeChecks
+                        checks =
+                            Dict.get title state.recipes
+                                |> Maybe.map .checks
+                                |> Maybe.withDefault Set.empty
                     in
                     viewRecipe model.language
                         recipe
-                        { maybeChecks = recipeChecks
+                        { checks = checks
                         , showVideo = options.showWakeVideo
                         , videoId =
                             state.wakeVideoId
@@ -917,7 +948,7 @@ recipeLinkStyle =
 
 
 type alias RecipeViewOptions =
-    { maybeChecks : Maybe (Set String)
+    { checks : Set String
     , showVideo : Bool
     , videoId : String
     }
@@ -934,14 +965,11 @@ viewRecipe language recipe options =
                 |> Recipe.ingredients
                 |> IngredientMap.fromIngredients
 
-        checks =
-            options.maybeChecks |> Maybe.withDefault Set.empty
-
         ingredientsView =
             viewIngredientList
                 [ Html.text language.recipe.noIngredientsRequired ]
                 ingredientMap
-                checks
+                options.checks
                 (UpdateCheckOnRecipe title)
 
         stepsView =
@@ -1031,7 +1059,7 @@ viewRecipe language recipe options =
                         )
                     , children =
                         ingredientsView
-                            :: (if Set.isEmpty checks then
+                            :: (if Set.isEmpty options.checks then
                                     []
 
                                 else
@@ -1293,7 +1321,7 @@ ingredientsFromRecipes recipes selectedRecipes =
     selectedRecipes
         |> Set.toList
         |> List.filterMap (\title -> Dict.get title recipes)
-        |> List.concatMap (\( parts, _ ) -> Recipe.ingredients parts)
+        |> List.concatMap (\{ method } -> Recipe.ingredients method)
 
 
 viewSettings : Language -> SettingsState -> State -> ( Maybe String, Html Msg )
