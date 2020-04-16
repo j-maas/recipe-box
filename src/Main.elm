@@ -115,15 +115,10 @@ type alias SettingsState =
 
 
 type alias Flags =
-    { localRecipes :
+    { recipes :
         List
             { code : String
-            , checks : List String
-            }
-    , dropboxRecipes :
-        List
-            { code : String
-            , rev : String
+            , revision : Maybe String
             , checks : List String
             }
     , shoppingList : PortShoppingList
@@ -142,8 +137,8 @@ type alias JsonSettings =
 init : Flags -> Url -> Navigation.Key -> ( Model, Cmd Msg )
 init flags url key =
     let
-        localRecipes =
-            flags.localRecipes
+        recipes =
+            flags.recipes
                 |> List.filterMap
                     (\entry ->
                         RecipeParser.parse entry.code
@@ -158,29 +153,10 @@ init flags url key =
                                     , { method = Recipe.method recipe
                                       , code = entry.code
                                       , checks = Set.fromList entry.checks
-                                      }
-                                    )
-                                )
-                    )
-                |> Dict.fromList
-
-        dropboxRecipes =
-            flags.dropboxRecipes
-                |> List.filterMap
-                    (\entry ->
-                        RecipeParser.parse entry.code
-                            |> Result.toMaybe
-                            |> Maybe.map
-                                (\recipe ->
-                                    let
-                                        title =
-                                            Recipe.title recipe
-                                    in
-                                    ( title
-                                    , { method = Recipe.method recipe
-                                      , code = entry.code
-                                      , checks = Set.fromList entry.checks
-                                      , revision = entry.rev |> SyncedRevision
+                                      , revision =
+                                            entry.revision
+                                                |> Maybe.map SyncedRevision
+                                                |> Maybe.withDefault NewRevision
                                       }
                                     )
                                 )
@@ -210,8 +186,7 @@ init flags url key =
                 |> Maybe.withDefault ( Nothing, Cmd.none )
 
         state =
-            { recipes =
-                dropboxRecipes
+            { recipes = recipes
             , shoppingList = shoppingList
             , wakeVideoId = settings.wakeVideoId |> Maybe.withDefault "14Cf79j92xA"
             , dropbox = dropbox
@@ -323,7 +298,7 @@ update msg model =
                                     }
                               }
                             , Cmd.batch
-                                [ saveRecipe { title = title, code = code }
+                                [ saveRecipeCmd { title = title, code = code, revision = revision }
                                 , goTo (RecipeRoute title)
                                 ]
                             )
@@ -940,7 +915,16 @@ parseRoute url =
             )
 
 
-port saveRecipe : { title : String, code : String } -> Cmd msg
+saveRecipeCmd : { title : String, code : String, revision : Revision } -> Cmd msg
+saveRecipeCmd entry =
+    saveRecipe
+        { title = entry.title
+        , code = entry.code
+        , revision = codeFromRevision entry.revision
+        }
+
+
+port saveRecipe : { title : String, code : String, revision : Maybe String } -> Cmd msg
 
 
 saveRecipeChecksCmd : String -> Set String -> Cmd msg

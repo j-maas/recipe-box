@@ -28,7 +28,9 @@
             var key = localStorage.key(i);
             if (key.startsWith(recipePrefix)) {
                 var title = key.slice(recipePrefix.length);
-                push(title, "code", localStorage.getItem(key));
+                var entry = JSON.parse(localStorage.getItem(key));
+                push(title, "code", entry.code);
+                push(title, "revision", entry.revision);
             } else if (key.startsWith(checksPrefix)) {
                 var title = key.slice(checksPrefix.length);
                 push(title, "checks", JSON.parse(localStorage.getItem(key)));
@@ -77,8 +79,7 @@
         var app = Elm.Main.init({
             node: document.getElementById('elm'),
             flags: {
-                dropboxRecipes: [],
-                localRecipes: recipes,
+                recipes,
                 shoppingList,
                 language,
                 settings,
@@ -86,9 +87,9 @@
             }
         });
 
-        function saveRecipe(title, code) {
-            console.info("Saving recipe with title '" + title + "'.")
-            localStorage.setItem(recipeKeyFromTitle(title), code);
+        function saveRecipe(title, code, revision) {
+            console.info("Saving recipe with title '" + title + "' and revision '" + revision + "'.")
+            localStorage.setItem(recipeKeyFromTitle(title), JSON.stringify({ code, revision }));
         }
 
         function removeRecipe(title) {
@@ -139,7 +140,7 @@
         }
 
         app.ports.saveRecipe.subscribe(function (data) {
-            saveRecipe(data.title, data.code);
+            saveRecipe(data.title, data.code, data.revision);
         });
         app.ports.removeRecipe.subscribe(function (title) {
             removeRecipe(title);
