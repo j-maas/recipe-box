@@ -19,6 +19,7 @@ import List.Extra as List
 import Recipe exposing (Recipe)
 import RecipeParser
 import Set exposing (Set)
+import Task
 import TypedUrl
 import Url exposing (Url)
 
@@ -64,7 +65,27 @@ type alias RecipeEntry =
     { method : Recipe.Parts
     , code : String
     , checks : Set String
+    , revision : Revision
     }
+
+
+type Revision
+    = NewRevision
+    | ChangedRevision String
+    | SyncedRevision String
+
+
+codeFromRevision : Revision -> Maybe String
+codeFromRevision revision =
+    case revision of
+        NewRevision ->
+            Nothing
+
+        ChangedRevision code ->
+            Just code
+
+        SyncedRevision code ->
+            Just code
 
 
 type Credentials
@@ -94,9 +115,15 @@ type alias SettingsState =
 
 
 type alias Flags =
-    { recipes :
+    { localRecipes :
         List
             { code : String
+            , checks : List String
+            }
+    , dropboxRecipes :
+        List
+            { code : String
+            , rev : String
             , checks : List String
             }
     , shoppingList : PortShoppingList
@@ -115,8 +142,8 @@ type alias JsonSettings =
 init : Flags -> Url -> Navigation.Key -> ( Model, Cmd Msg )
 init flags url key =
     let
-        recipes =
-            flags.recipes
+        localRecipes =
+            flags.localRecipes
                 |> List.filterMap
                     (\entry ->
                         RecipeParser.parse entry.code
@@ -137,6 +164,29 @@ init flags url key =
                     )
                 |> Dict.fromList
 
+        dropboxRecipes =
+            flags.dropboxRecipes
+                |> List.filterMap
+                    (\entry ->
+                        RecipeParser.parse entry.code
+                            |> Result.toMaybe
+                            |> Maybe.map
+                                (\recipe ->
+                                    let
+                                        title =
+                                            Recipe.title recipe
+                                    in
+                                    ( title
+                                    , { method = Recipe.method recipe
+                                      , code = entry.code
+                                      , checks = Set.fromList entry.checks
+                                      , revision = entry.rev |> SyncedRevision
+                                      }
+                                    )
+                                )
+                    )
+                |> Dict.fromList
+
         shoppingList =
             { selectedRecipes = flags.shoppingList.selectedRecipes |> Set.fromList
             , checked = flags.shoppingList.checked |> Set.fromList
@@ -149,17 +199,19 @@ init flags url key =
                     , dropbox = Nothing
                     }
 
-        dropbox =
+        ( dropbox, dropboxCmd ) =
             settings.dropbox
                 |> Maybe.andThen
                     (\raw ->
                         Decode.decodeValue Dropbox.decodeUserAuth raw
                             |> Result.toMaybe
-                            |> Maybe.map LoggedIn
+                            |> Maybe.map (\auth -> ( Just (LoggedIn auth), syncDropbox auth ))
                     )
+                |> Maybe.withDefault ( Nothing, Cmd.none )
 
         state =
-            { recipes = recipes
+            { recipes =
+                dropboxRecipes
             , shoppingList = shoppingList
             , wakeVideoId = settings.wakeVideoId |> Maybe.withDefault "14Cf79j92xA"
             , dropbox = dropbox
@@ -174,7 +226,7 @@ init flags url key =
       , language = Language.fromString flags.language
       , screen = screen
       }
-    , cmd
+    , Cmd.batch [ cmd, dropboxCmd ]
     )
 
 
@@ -193,6 +245,8 @@ type Msg
     | SwitchLanguage String
     | StartLogin
     | NonceGenerated String
+    | SyncDropbox (Result Dropbox.ListFolderError Dropbox.ListFolderResponse)
+    | DropboxUpdates (Result Dropbox.DownloadError (List Dropbox.DownloadResponse))
     | UrlChanged Url
     | LinkClicked Browser.UrlRequest
 
@@ -242,6 +296,16 @@ update msg model =
                                 title =
                                     Recipe.title recipe
 
+                                oldRecipe =
+                                    Dict.get title state.recipes
+
+                                revision =
+                                    oldRecipe
+                                        |> Maybe.map .revision
+                                        |> Maybe.andThen codeFromRevision
+                                        |> Maybe.map ChangedRevision
+                                        |> Maybe.withDefault NewRevision
+
                                 method =
                                     Recipe.method recipe
                             in
@@ -253,6 +317,7 @@ update msg model =
                                                 { method = method
                                                 , code = code
                                                 , checks = Set.empty
+                                                , revision = revision
                                                 }
                                                 state.recipes
                                     }
@@ -542,7 +607,7 @@ update msg model =
                 testUrl =
                     let
                         _ =
-                            Debug.log "Remove the localhost Dropbox auth redirect!" ()
+                            Debug.todo "Remove the localhost Dropbox auth redirect!"
                     in
                     { protocol = Url.Http
                     , host = "localhost"
@@ -566,6 +631,115 @@ update msg model =
             in
             ( model, cmd )
 
+        SyncDropbox result ->
+            let
+                state =
+                    model.state
+            in
+            case result of
+                Ok response ->
+                    let
+                        filesToDownload =
+                            response.entries
+                                |> List.filterMap
+                                    (\entry ->
+                                        case entry of
+                                            Dropbox.FileMeta data ->
+                                                Just ( data.name, data.rev )
+
+                                            _ ->
+                                                Nothing
+                                    )
+                                |> List.filterMap
+                                    (\( fileName, revision ) ->
+                                        let
+                                            recipeTitle =
+                                                titleFromFileName fileName
+                                        in
+                                        Dict.get recipeTitle state.recipes
+                                            |> Maybe.map
+                                                (\entry ->
+                                                    case entry.revision of
+                                                        SyncedRevision code ->
+                                                            if code == revision then
+                                                                Nothing
+
+                                                            else
+                                                                Just fileName
+
+                                                        _ ->
+                                                            Nothing
+                                                )
+                                            |> Maybe.withDefault (Just fileName)
+                                    )
+                    in
+                    case state.dropbox of
+                        Just (LoggedIn auth) ->
+                            let
+                                cmd =
+                                    filesToDownload
+                                        |> List.map (\file -> "/recipes/" ++ file)
+                                        |> List.map
+                                            (\path ->
+                                                Dropbox.download auth { path = path }
+                                            )
+                                        |> Task.sequence
+                                        |> Task.attempt DropboxUpdates
+                            in
+                            ( model, cmd )
+
+                        _ ->
+                            -- TODO: Ask for login
+                            ( model, Cmd.none )
+
+                Err error ->
+                    -- TODO: Handle error
+                    ( model, Cmd.none )
+
+        DropboxUpdates result ->
+            let
+                state =
+                    model.state
+            in
+            case result of
+                Ok responses ->
+                    let
+                        newRecipes =
+                            responses
+                                |> List.filterMap
+                                    (\response ->
+                                        let
+                                            recipeTitle =
+                                                titleFromFileName response.name
+                                        in
+                                        case RecipeParser.parse response.content of
+                                            Ok recipe ->
+                                                if Recipe.title recipe == recipeTitle then
+                                                    Just
+                                                        ( recipeTitle
+                                                        , { method = Recipe.method recipe
+                                                          , code = response.content
+                                                          , checks = Set.empty
+                                                          , revision = SyncedRevision response.rev
+                                                          }
+                                                        )
+
+                                                else
+                                                    -- TODO: Notify about error
+                                                    Nothing
+
+                                            Err err ->
+                                                -- TODO: Notify about error
+                                                Nothing
+                                    )
+                                |> List.foldl (\( title, entry ) recipes -> Dict.insert title entry recipes) state.recipes
+                    in
+                    ( { model | state = { state | recipes = newRecipes } }, Cmd.none )
+
+                Err error ->
+                    -- TODO: Handle error
+                    ( model, Cmd.none )
+
         UrlChanged url ->
             let
                 ( newScreen, newState, cmd ) =
@@ -586,6 +760,12 @@ update msg model =
 
                 Browser.External href ->
                     ( model, Navigation.load href )
+
+
+titleFromFileName : String -> String
+titleFromFileName fileName =
+    -- Remove .recipe.txt ending
+    String.dropRight 11 fileName
 
 
 type Route
@@ -675,6 +855,18 @@ parseUrl url =
                 |> Maybe.withDefault (ParsedRoute OverviewRoute)
 
 
+syncDropbox : Dropbox.UserAuth -> Cmd Msg
+syncDropbox auth =
+    Dropbox.listFolder auth
+        { path = "/recipes"
+        , recursive = False
+        , includeMediaInfo = False
+        , includeDeleted = False
+        , includeHasExplicitSharedMembers = False
+        }
+        |> Task.attempt SyncDropbox
+
+
 applyUrl : State -> Url -> ( Screen, State, Cmd Msg )
 applyUrl state url =
     case parseUrl url of
@@ -693,7 +885,7 @@ applyUrl state url =
                         in
                         ( screenFromRoute state SettingsRoute
                         , newState
-                        , saveSettingsCmd newState
+                        , Cmd.batch [ saveSettingsCmd newState, syncDropbox response.userAuth ]
                         )
 
                     else
