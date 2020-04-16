@@ -19,7 +19,7 @@ import List.Extra as List
 import Recipe exposing (Recipe)
 import RecipeParser
 import Set exposing (Set)
-import Task
+import Task exposing (Task)
 import TypedUrl
 import Url exposing (Url)
 
@@ -221,7 +221,8 @@ type Msg
     | StartLogin
     | NonceGenerated String
     | SyncDropbox (Result Dropbox.ListFolderError Dropbox.ListFolderResponse)
-    | DropboxUpdates (Result Dropbox.DownloadError (List Dropbox.DownloadResponse))
+    | DropboxUploads (Result Dropbox.UploadError (List Dropbox.FileMetadata))
+    | DropboxDownloads (Result Dropbox.DownloadError (List Dropbox.DownloadResponse))
     | UrlChanged Url
     | LinkClicked Browser.UrlRequest
 
@@ -283,6 +284,16 @@ update msg model =
 
                                 method =
                                     Recipe.method recipe
+
+                                uploadCmd =
+                                    case state.dropbox of
+                                        Just (LoggedIn auth) ->
+                                            uploadFile auth title (codeFromRevision revision) code
+                                                |> Task.map List.singleton
+                                                |> Task.attempt DropboxUploads
+
+                                        _ ->
+                                            Cmd.none
                             in
                             ( { model
                                 | state =
@@ -299,6 +310,7 @@ update msg model =
                               }
                             , Cmd.batch
                                 [ saveRecipeCmd { title = title, code = code, revision = revision }
+                                , uploadCmd
                                 , goTo (RecipeRoute title)
                                 ]
                             )
@@ -582,7 +594,7 @@ update msg model =
                 testUrl =
                     let
                         _ =
-                            Debug.todo "Remove the localhost Dropbox auth redirect!"
+                            Debug.log "Remove the localhost Dropbox auth redirect!" ()
                     in
                     { protocol = Url.Http
                     , host = "localhost"
@@ -614,7 +626,7 @@ update msg model =
             case result of
                 Ok response ->
                     let
-                        filesToDownload =
+                        remoteRecipes =
                             response.entries
                                 |> List.filterMap
                                     (\entry ->
@@ -625,41 +637,92 @@ update msg model =
                                             _ ->
                                                 Nothing
                                     )
-                                |> List.filterMap
-                                    (\( fileName, revision ) ->
+
+                        ( statuses, localOnlyRecipes ) =
+                            remoteRecipes
+                                |> List.foldl
+                                    (\( fileName, revision ) ( stats, recipes ) ->
                                         let
                                             recipeTitle =
                                                 titleFromFileName fileName
+
+                                            recipe =
+                                                Dict.get recipeTitle recipes
+
+                                            newRecipes =
+                                                Dict.remove recipeTitle recipes
+
+                                            newStatus =
+                                                recipe
+                                                    |> Maybe.map
+                                                        (\entry ->
+                                                            case entry.revision of
+                                                                SyncedRevision code ->
+                                                                    if code == revision then
+                                                                        Synced
+
+                                                                    else
+                                                                        NeedsDownload recipeTitle
+
+                                                                ChangedRevision code ->
+                                                                    if code == revision then
+                                                                        NeedsUpload
+                                                                            { fileName = fileName
+                                                                            , revision = code
+                                                                            , content = entry.code
+                                                                            }
+
+                                                                    else
+                                                                        Conflict recipeTitle
+
+                                                                NewRevision ->
+                                                                    -- The file already exists on the remote.
+                                                                    Conflict recipeTitle
+                                                        )
+                                                    |> Maybe.withDefault (NeedsDownload recipeTitle)
                                         in
-                                        Dict.get recipeTitle state.recipes
-                                            |> Maybe.map
-                                                (\entry ->
-                                                    case entry.revision of
-                                                        SyncedRevision code ->
-                                                            if code == revision then
-                                                                Nothing
-
-                                                            else
-                                                                Just fileName
-
-                                                        _ ->
-                                                            Nothing
-                                                )
-                                            |> Maybe.withDefault (Just fileName)
+                                        ( newStatus :: stats, newRecipes )
                                     )
+                                    ( [], state.recipes )
                     in
                     case state.dropbox of
                         Just (LoggedIn auth) ->
                             let
-                                cmd =
-                                    filesToDownload
-                                        |> List.map (\file -> "/recipes/" ++ file)
-                                        |> List.map
-                                            (\path ->
-                                                Dropbox.download auth { path = path }
+                                ( uploadUpdateTasks, downloadTasks ) =
+                                    statuses
+                                        |> List.foldl
+                                            (\status ( up, down ) ->
+                                                case status of
+                                                    Synced ->
+                                                        ( up, down )
+
+                                                    Conflict _ ->
+                                                        -- TODO: Notify user
+                                                        ( up, down )
+
+                                                    NeedsUpload entry ->
+                                                        ( uploadFile auth entry.fileName (Just entry.revision) entry.content :: up, down )
+
+                                                    NeedsDownload file ->
+                                                        ( up, downloadFile auth file :: down )
                                             )
-                                        |> Task.sequence
-                                        |> Task.attempt DropboxUpdates
+                                            ( [], [] )
+
+                                uploadTasks =
+                                    uploadUpdateTasks
+                                        ++ (localOnlyRecipes
+                                                |> Dict.toList
+                                                |> List.map
+                                                    (\( title, entry ) ->
+                                                        uploadFile auth title Nothing entry.code
+                                                    )
+                                           )
+
+                                cmd =
+                                    Cmd.batch
+                                        [ Task.sequence uploadTasks |> Task.attempt DropboxUploads
+                                        , Task.sequence downloadTasks |> Task.attempt DropboxDownloads
+                                        ]
                             in
                             ( model, cmd )
 
@@ -671,7 +734,7 @@ update msg model =
                     -- TODO: Handle error
                     ( model, Cmd.none )
 
-        DropboxUpdates result ->
+        DropboxUploads result ->
             let
                 state =
                     model.state
@@ -680,6 +743,38 @@ update msg model =
                 Ok responses ->
                     let
                         newRecipes =
+                            responses
+                                |> List.foldl
+                                    (\response recipes ->
+                                        let
+                                            title =
+                                                titleFromFileName response.name
+                                        in
+                                        Dict.update title
+                                            (Maybe.map
+                                                (\entry ->
+                                                    { entry | revision = SyncedRevision response.rev }
+                                                )
+                                            )
+                                            recipes
+                                    )
+                                    state.recipes
+                    in
+                    ( { model | state = { state | recipes = newRecipes } }, Cmd.none )
+
+                Err error ->
+                    -- TODO: Handle error
+                    ( model, Cmd.none )
+
+        DropboxDownloads result ->
+            let
+                state =
+                    model.state
+            in
+            case result of
+                Ok responses ->
+                    let
+                        newRecipeEntries =
                             responses
                                 |> List.filterMap
                                     (\response ->
@@ -707,9 +802,20 @@ update msg model =
                                                 -- TODO: Notify about error
                                                 Nothing
                                     )
+
+                        newRecipes =
+                            newRecipeEntries
                                 |> List.foldl (\( title, entry ) recipes -> Dict.insert title entry recipes) state.recipes
+
+                        cmd =
+                            newRecipeEntries
+                                |> List.map
+                                    (\( title, entry ) ->
+                                        saveRecipeCmd { title = title, code = entry.code, revision = entry.revision }
+                                    )
+                                |> Cmd.batch
                     in
-                    ( { model | state = { state | recipes = newRecipes } }, Cmd.none )
+                    ( { model | state = { state | recipes = newRecipes } }, cmd )
 
                 Err error ->
                     -- TODO: Handle error
@@ -741,6 +847,39 @@ titleFromFileName : String -> String
 titleFromFileName fileName =
     -- Remove .recipe.txt ending
     String.dropRight 11 fileName
+
+
+type Status
+    = Synced
+    | NeedsDownload String
+    | NeedsUpload { fileName : String, revision : String, content : String }
+    | Conflict String
+
+
+uploadFile : Dropbox.UserAuth -> String -> Maybe String -> String -> Task Dropbox.UploadError Dropbox.FileMetadata
+uploadFile auth title revision content =
+    let
+        mode =
+            case revision of
+                Just code ->
+                    Dropbox.Update code
+
+                Nothing ->
+                    Dropbox.Add
+    in
+    Dropbox.upload auth
+        { path = "/recipes/" ++ title ++ ".recipe.txt"
+        , mode = mode
+        , autorename = False
+        , clientModified = Nothing
+        , mute = False
+        , content = content
+        }
+
+
+downloadFile : Dropbox.UserAuth -> String -> Task Dropbox.DownloadError Dropbox.DownloadResponse
+downloadFile auth title =
+    Dropbox.download auth { path = "/recipes/" ++ title ++ ".recipe.txt" }
 
 
 type Route
