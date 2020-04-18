@@ -223,6 +223,7 @@ type Msg
     | SyncDropbox (Result Dropbox.ListFolderError Dropbox.ListFolderResponse)
     | DropboxUploads (Result Dropbox.UploadError (List Dropbox.FileMetadata))
     | DropboxDownloads (Result Dropbox.DownloadError (List Dropbox.DownloadResponse))
+    | DropboxDeleted (Result Dropbox.DeleteError Dropbox.Metadata)
     | UrlChanged Url
     | LinkClicked Browser.UrlRequest
 
@@ -238,12 +239,29 @@ update msg model =
             let
                 state =
                     model.state
+
+                removeFileCmd =
+                    case state.dropbox of
+                        Just (LoggedIn auth) ->
+                            let
+                                revision =
+                                    state.recipes
+                                        |> Dict.get title
+                                        |> Maybe.map .revision
+                                        |> Maybe.withDefault NewRevision
+                            in
+                            removeFile auth title revision
+                                |> Task.attempt DropboxDeleted
+
+                        _ ->
+                            Cmd.none
             in
             ( { model
                 | state = { state | recipes = Dict.remove title state.recipes }
               }
             , Cmd.batch
                 [ removeRecipe title
+                , removeFileCmd
                 , goTo OverviewRoute
                 ]
             )
@@ -821,6 +839,21 @@ update msg model =
                     -- TODO: Handle error
                     ( model, Cmd.none )
 
+        DropboxDeleted result ->
+            case result of
+                Ok metadata ->
+                    case metadata of
+                        Dropbox.FileMeta info ->
+                            ( model, Cmd.none )
+
+                        _ ->
+                            -- TODO: Handle error
+                            ( model, Cmd.none )
+
+                Err error ->
+                    --TODO: Handle error
+                    ( model, Cmd.none )
+
         UrlChanged url ->
             let
                 ( newScreen, newState, cmd ) =
@@ -880,6 +913,14 @@ uploadFile auth title revision content =
 downloadFile : Dropbox.UserAuth -> String -> Task Dropbox.DownloadError Dropbox.DownloadResponse
 downloadFile auth title =
     Dropbox.download auth { path = "/recipes/" ++ title ++ ".recipe.txt" }
+
+
+removeFile : Dropbox.UserAuth -> String -> Revision -> Task Dropbox.DeleteError Dropbox.Metadata
+removeFile auth title revision =
+    Dropbox.delete auth
+        { path = "/recipes/" ++ title ++ ".recipe.txt"
+        , parentRev = codeFromRevision revision
+        }
 
 
 type Route
