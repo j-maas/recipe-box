@@ -4,13 +4,16 @@ import Browser
 import Browser.Navigation as Navigation
 import Css exposing (auto, num, pct, rem, zero)
 import Css.Global as Global
+import Db exposing (Db)
 import Dict exposing (Dict)
 import Dropbox
 import Embed.Youtube
 import Embed.Youtube.Attributes
+import FileName
 import Html.Styled as Html exposing (Html)
 import Html.Styled.Attributes as Attributes exposing (css)
 import Html.Styled.Events as Events
+import Id exposing (Id)
 import Ingredient exposing (Ingredient)
 import IngredientMap exposing (IngredientMap)
 import Json.Decode as Decode
@@ -58,11 +61,15 @@ type alias State =
 
 
 type alias RecipeStore =
-    Dict String RecipeEntry
+    Db RecipeEntry
+
+
+type alias RecipeId =
+    Id RecipeEntry
 
 
 type alias RecipeEntry =
-    { method : Recipe.Parts
+    { recipe : Recipe
     , code : String
     , checks : Set String
     , revision : Revision
@@ -101,10 +108,17 @@ type alias ShoppingList =
 
 type Screen
     = Overview
-    | Recipe Recipe { showWakeVideo : Bool }
-    | Edit { code : String, failure : Maybe RecipeParser.Failure }
+    | Recipe RecipeId Recipe { showWakeVideo : Bool }
+    | New EditState
+    | Edit EditState
     | Shopping
     | Settings SettingsState
+
+
+type alias EditState =
+    { code : String
+    , failure : Maybe RecipeParser.Failure
+    }
 
 
 type alias SettingsState =
@@ -117,7 +131,8 @@ type alias SettingsState =
 type alias Flags =
     { recipes :
         List
-            { code : String
+            { fileName : String
+            , code : String
             , revision : Maybe String
             , checks : List String
             }
@@ -145,12 +160,8 @@ init flags url key =
                             |> Result.toMaybe
                             |> Maybe.map
                                 (\recipe ->
-                                    let
-                                        title =
-                                            Recipe.title recipe
-                                    in
-                                    ( title
-                                    , { method = Recipe.method recipe
+                                    ( Id.fromString entry.fileName
+                                    , { recipe = recipe
                                       , code = entry.code
                                       , checks = Set.fromList entry.checks
                                       , revision =
@@ -161,10 +172,12 @@ init flags url key =
                                     )
                                 )
                     )
-                |> Dict.fromList
+                |> Db.fromList
 
         shoppingList =
-            { selectedRecipes = flags.shoppingList.selectedRecipes |> Set.fromList
+            { selectedRecipes =
+                flags.shoppingList.selectedRecipes
+                    |> Set.fromList
             , checked = flags.shoppingList.checked |> Set.fromList
             }
 
@@ -206,15 +219,16 @@ init flags url key =
 
 
 type Msg
-    = DeleteRecipe String
+    = DeleteRecipe RecipeId
     | Edited String
-    | Save
-    | AddRecipeToShoppingList String
-    | RemoveRecipeFromShoppingList String
+    | Add
+    | Update
+    | AddRecipeToShoppingList RecipeId
+    | RemoveRecipeFromShoppingList RecipeId
     | UpdateCheckOnShoppingList String Bool
     | ClearShoppingList
-    | UpdateCheckOnRecipe String String Bool
-    | ClearRecipeChecks String
+    | UpdateCheckOnRecipe RecipeId String Bool
+    | ClearRecipeChecks RecipeId
     | ToggleVideo
     | SetWakeVideoUrl String
     | SwitchLanguage String
@@ -235,7 +249,7 @@ update msg model =
             Navigation.pushUrl model.key (stringFromRoute route)
     in
     case msg of
-        DeleteRecipe title ->
+        DeleteRecipe id ->
             let
                 state =
                     model.state
@@ -245,22 +259,21 @@ update msg model =
                         Just (LoggedIn auth) ->
                             let
                                 revision =
-                                    state.recipes
-                                        |> Dict.get title
+                                    Db.get state.recipes id
                                         |> Maybe.map .revision
                                         |> Maybe.withDefault NewRevision
                             in
-                            removeFile auth title revision
+                            removeFile auth id revision
                                 |> Task.attempt DropboxDeleted
 
                         _ ->
                             Cmd.none
             in
             ( { model
-                | state = { state | recipes = Dict.remove title state.recipes }
+                | state = { state | recipes = Db.remove id state.recipes }
               }
             , Cmd.batch
-                [ removeRecipe title
+                [ removeRecipeCmd id
                 , removeFileCmd
                 , goTo OverviewRoute
                 ]
@@ -270,6 +283,9 @@ update msg model =
             let
                 newScreen =
                     case model.screen of
+                        New _ ->
+                            New { code = code, failure = Nothing }
+
                         Edit _ ->
                             Edit { code = code, failure = Nothing }
 
@@ -278,9 +294,9 @@ update msg model =
             in
             ( { model | screen = newScreen }, Cmd.none )
 
-        Save ->
+        Add ->
             case model.screen of
-                Edit { code } ->
+                New { code } ->
                     case RecipeParser.parse code of
                         Ok recipe ->
                             let
@@ -290,15 +306,11 @@ update msg model =
                                 title =
                                     Recipe.title recipe
 
-                                oldRecipe =
-                                    Dict.get title state.recipes
+                                id =
+                                    FileName.autorename title state.recipes
 
                                 revision =
-                                    oldRecipe
-                                        |> Maybe.map .revision
-                                        |> Maybe.andThen codeFromRevision
-                                        |> Maybe.map ChangedRevision
-                                        |> Maybe.withDefault NewRevision
+                                    NewRevision
 
                                 method =
                                     Recipe.method recipe
@@ -306,7 +318,7 @@ update msg model =
                                 uploadCmd =
                                     case state.dropbox of
                                         Just (LoggedIn auth) ->
-                                            uploadFile auth title (codeFromRevision revision) code
+                                            uploadFile auth id (codeFromRevision revision) code
                                                 |> Task.map List.singleton
                                                 |> Task.attempt DropboxUploads
 
@@ -317,19 +329,21 @@ update msg model =
                                 | state =
                                     { state
                                         | recipes =
-                                            Dict.insert title
-                                                { method = method
-                                                , code = code
-                                                , checks = Set.empty
-                                                , revision = revision
-                                                }
+                                            Db.insert
+                                                ( id
+                                                , { recipe = recipe
+                                                  , code = code
+                                                  , checks = Set.empty
+                                                  , revision = revision
+                                                  }
+                                                )
                                                 state.recipes
                                     }
                               }
                             , Cmd.batch
-                                [ saveRecipeCmd { title = title, code = code, revision = revision }
+                                [ saveRecipeCmd { id = id, code = code, revision = revision }
                                 , uploadCmd
-                                , goTo (RecipeRoute title)
+                                , goTo (RecipeRoute id)
                                 ]
                             )
 
@@ -347,7 +361,81 @@ update msg model =
                 _ ->
                     ( model, Cmd.none )
 
-        AddRecipeToShoppingList title ->
+        Update ->
+            case model.screen of
+                Edit { code } ->
+                    case RecipeParser.parse code of
+                        Ok recipe ->
+                            let
+                                state =
+                                    model.state
+
+                                title =
+                                    Recipe.title recipe
+
+                                id =
+                                    Id.fromString title
+
+                                oldRecipe =
+                                    Db.get state.recipes id
+
+                                revision =
+                                    oldRecipe
+                                        |> Maybe.map .revision
+                                        |> Maybe.andThen codeFromRevision
+                                        |> Maybe.map ChangedRevision
+                                        |> Maybe.withDefault NewRevision
+
+                                method =
+                                    Recipe.method recipe
+
+                                uploadCmd =
+                                    case state.dropbox of
+                                        Just (LoggedIn auth) ->
+                                            uploadFile auth id (codeFromRevision revision) code
+                                                |> Task.map List.singleton
+                                                |> Task.attempt DropboxUploads
+
+                                        _ ->
+                                            Cmd.none
+                            in
+                            ( { model
+                                | state =
+                                    { state
+                                        | recipes =
+                                            Db.insert
+                                                ( id
+                                                , { recipe = recipe
+                                                  , code = code
+                                                  , checks = Set.empty
+                                                  , revision = revision
+                                                  }
+                                                )
+                                                state.recipes
+                                    }
+                              }
+                            , Cmd.batch
+                                [ saveRecipeCmd { id = id, code = code, revision = revision }
+                                , uploadCmd
+                                , goTo (RecipeRoute id)
+                                ]
+                            )
+
+                        Err failure ->
+                            ( { model
+                                | screen =
+                                    Edit
+                                        { code = code
+                                        , failure = Just failure
+                                        }
+                              }
+                            , Cmd.none
+                            )
+
+                _ ->
+                    ( model, Cmd.none )
+
+        AddRecipeToShoppingList id ->
             let
                 state =
                     model.state
@@ -356,7 +444,7 @@ update msg model =
                     state.shoppingList
 
                 newShoppingList =
-                    { oldShoppingList | selectedRecipes = Set.insert title oldShoppingList.selectedRecipes }
+                    { oldShoppingList | selectedRecipes = Set.insert (Id.toString id) oldShoppingList.selectedRecipes }
             in
             ( { model
                 | state =
@@ -367,7 +455,7 @@ update msg model =
             , saveShoppingListCmd newShoppingList
             )
 
-        RemoveRecipeFromShoppingList title ->
+        RemoveRecipeFromShoppingList id ->
             let
                 state =
                     model.state
@@ -376,7 +464,7 @@ update msg model =
                     model.state.shoppingList
 
                 newSelectedRecipes =
-                    Set.remove title oldShoppingList.selectedRecipes
+                    Set.remove (Id.toString id) oldShoppingList.selectedRecipes
 
                 newIngredients =
                     ingredientsFromRecipes state.recipes newSelectedRecipes
@@ -439,7 +527,7 @@ update msg model =
             , saveShoppingListCmd newShoppingList
             )
 
-        UpdateCheckOnRecipe recipeTitle ingredientName checked ->
+        UpdateCheckOnRecipe id ingredientName checked ->
             let
                 state =
                     model.state
@@ -452,7 +540,7 @@ update msg model =
                         Set.remove
 
                 oldChecks =
-                    Dict.get recipeTitle state.recipes
+                    Db.get state.recipes id
                         |> Maybe.map .checks
                         |> Maybe.withDefault Set.empty
 
@@ -461,24 +549,24 @@ update msg model =
 
                 newRecipes =
                     state.recipes
-                        |> Dict.update recipeTitle
+                        |> Db.update id
                             (Maybe.map (\entry -> { entry | checks = newChecks }))
             in
             ( { model
                 | state =
                     { state | recipes = newRecipes }
               }
-            , saveRecipeChecksCmd recipeTitle newChecks
+            , saveRecipeChecksCmd id newChecks
             )
 
-        ClearRecipeChecks title ->
+        ClearRecipeChecks id ->
             let
                 state =
                     model.state
 
                 newRecipes =
                     state.recipes
-                        |> Dict.update title
+                        |> Db.update id
                             (Maybe.map
                                 (\entry ->
                                     { entry | checks = Set.empty }
@@ -489,19 +577,19 @@ update msg model =
                 | state =
                     { state | recipes = newRecipes }
               }
-            , saveRecipeChecksCmd title Set.empty
+            , saveRecipeChecksCmd id Set.empty
             )
 
         ToggleVideo ->
             let
                 newScreen =
                     case model.screen of
-                        Recipe title oldOptions ->
+                        Recipe id recipe oldOptions ->
                             let
                                 newOptions =
                                     { oldOptions | showWakeVideo = not oldOptions.showWakeVideo }
                             in
-                            Recipe title newOptions
+                            Recipe id recipe newOptions
 
                         _ ->
                             model.screen
@@ -652,6 +740,7 @@ update msg model =
                                             Dropbox.FileMeta data ->
                                                 Just ( data.name, data.rev )
 
+                                            -- TODO: Handle deleted files.
                                             _ ->
                                                 Nothing
                                     )
@@ -661,14 +750,14 @@ update msg model =
                                 |> List.foldl
                                     (\( fileName, revision ) ( stats, recipes ) ->
                                         let
-                                            recipeTitle =
-                                                titleFromFileName fileName
+                                            id =
+                                                idFromDropboxFileName fileName
 
                                             recipe =
-                                                Dict.get recipeTitle recipes
+                                                Db.get recipes id
 
                                             newRecipes =
-                                                Dict.remove recipeTitle recipes
+                                                Db.remove id recipes
 
                                             newStatus =
                                                 recipe
@@ -680,24 +769,24 @@ update msg model =
                                                                         Synced
 
                                                                     else
-                                                                        NeedsDownload recipeTitle
+                                                                        NeedsDownload id
 
                                                                 ChangedRevision code ->
                                                                     if code == revision then
                                                                         NeedsUpload
-                                                                            { fileName = fileName
+                                                                            { id = id
                                                                             , revision = code
                                                                             , content = entry.code
                                                                             }
 
                                                                     else
-                                                                        Conflict recipeTitle
+                                                                        Conflict id
 
                                                                 NewRevision ->
                                                                     -- The file already exists on the remote.
-                                                                    Conflict recipeTitle
+                                                                    Conflict id
                                                         )
-                                                    |> Maybe.withDefault (NeedsDownload recipeTitle)
+                                                    |> Maybe.withDefault (NeedsDownload id)
                                         in
                                         ( newStatus :: stats, newRecipes )
                                     )
@@ -719,7 +808,7 @@ update msg model =
                                                         ( up, down )
 
                                                     NeedsUpload entry ->
-                                                        ( uploadFile auth entry.fileName (Just entry.revision) entry.content :: up, down )
+                                                        ( uploadFile auth entry.id (Just entry.revision) entry.content :: up, down )
 
                                                     NeedsDownload file ->
                                                         ( up, downloadFile auth file :: down )
@@ -729,10 +818,10 @@ update msg model =
                                 uploadTasks =
                                     uploadUpdateTasks
                                         ++ (localOnlyRecipes
-                                                |> Dict.toList
+                                                |> Db.toList
                                                 |> List.map
-                                                    (\( title, entry ) ->
-                                                        uploadFile auth title Nothing entry.code
+                                                    (\( id, entry ) ->
+                                                        uploadFile auth id Nothing entry.code
                                                     )
                                            )
 
@@ -765,10 +854,10 @@ update msg model =
                                 |> List.foldl
                                     (\response recipes ->
                                         let
-                                            title =
-                                                titleFromFileName response.name
+                                            id =
+                                                idFromDropboxFileName response.name
                                         in
-                                        Dict.update title
+                                        Db.update id
                                             (Maybe.map
                                                 (\entry ->
                                                     { entry | revision = SyncedRevision response.rev }
@@ -797,24 +886,19 @@ update msg model =
                                 |> List.filterMap
                                     (\response ->
                                         let
-                                            recipeTitle =
-                                                titleFromFileName response.name
+                                            id =
+                                                idFromDropboxFileName response.name
                                         in
                                         case RecipeParser.parse response.content of
                                             Ok recipe ->
-                                                if Recipe.title recipe == recipeTitle then
-                                                    Just
-                                                        ( recipeTitle
-                                                        , { method = Recipe.method recipe
-                                                          , code = response.content
-                                                          , checks = Set.empty
-                                                          , revision = SyncedRevision response.rev
-                                                          }
-                                                        )
-
-                                                else
-                                                    -- TODO: Notify about error
-                                                    Nothing
+                                                Just
+                                                    ( id
+                                                    , { recipe = recipe
+                                                      , code = response.content
+                                                      , checks = Set.empty
+                                                      , revision = SyncedRevision response.rev
+                                                      }
+                                                    )
 
                                             Err err ->
                                                 -- TODO: Notify about error
@@ -823,13 +907,13 @@ update msg model =
 
                         newRecipes =
                             newRecipeEntries
-                                |> List.foldl (\( title, entry ) recipes -> Dict.insert title entry recipes) state.recipes
+                                |> List.foldl (\row recipes -> Db.insert row recipes) state.recipes
 
                         cmd =
                             newRecipeEntries
                                 |> List.map
-                                    (\( title, entry ) ->
-                                        saveRecipeCmd { title = title, code = entry.code, revision = entry.revision }
+                                    (\( id, entry ) ->
+                                        saveRecipeCmd { id = id, code = entry.code, revision = entry.revision }
                                     )
                                 |> Cmd.batch
                     in
@@ -876,22 +960,26 @@ update msg model =
                     ( model, Navigation.load href )
 
 
-titleFromFileName : String -> String
-titleFromFileName fileName =
+idFromDropboxFileName : String -> RecipeId
+idFromDropboxFileName fileName =
     -- Remove .recipe.txt ending
     String.dropRight 11 fileName
+        |> Id.fromString
 
 
 type Status
     = Synced
-    | NeedsDownload String
-    | NeedsUpload { fileName : String, revision : String, content : String }
-    | Conflict String
+    | NeedsDownload RecipeId
+    | NeedsUpload { id : RecipeId, revision : String, content : String }
+    | Conflict RecipeId
 
 
-uploadFile : Dropbox.UserAuth -> String -> Maybe String -> String -> Task Dropbox.UploadError Dropbox.FileMetadata
-uploadFile auth title revision content =
+uploadFile : Dropbox.UserAuth -> RecipeId -> Maybe String -> String -> Task Dropbox.UploadError Dropbox.FileMetadata
+uploadFile auth id revision content =
     let
+        fileName =
+            Id.toString id
+
         mode =
             case revision of
                 Just code ->
@@ -901,7 +989,7 @@ uploadFile auth title revision content =
                     Dropbox.Add
     in
     Dropbox.upload auth
-        { path = "/recipes/" ++ title ++ ".recipe.txt"
+        { path = "/recipes/" ++ fileName ++ ".recipe.txt"
         , mode = mode
         , autorename = False
         , clientModified = Nothing
@@ -910,24 +998,32 @@ uploadFile auth title revision content =
         }
 
 
-downloadFile : Dropbox.UserAuth -> String -> Task Dropbox.DownloadError Dropbox.DownloadResponse
-downloadFile auth title =
-    Dropbox.download auth { path = "/recipes/" ++ title ++ ".recipe.txt" }
+downloadFile : Dropbox.UserAuth -> RecipeId -> Task Dropbox.DownloadError Dropbox.DownloadResponse
+downloadFile auth id =
+    let
+        fileName =
+            Id.toString id
+    in
+    Dropbox.download auth { path = "/recipes/" ++ fileName ++ ".recipe.txt" }
 
 
-removeFile : Dropbox.UserAuth -> String -> Revision -> Task Dropbox.DeleteError Dropbox.Metadata
-removeFile auth title revision =
+removeFile : Dropbox.UserAuth -> RecipeId -> Revision -> Task Dropbox.DeleteError Dropbox.Metadata
+removeFile auth id revision =
+    let
+        fileName =
+            Id.toString id
+    in
     Dropbox.delete auth
-        { path = "/recipes/" ++ title ++ ".recipe.txt"
+        { path = "/recipes/" ++ fileName ++ ".recipe.txt"
         , parentRev = codeFromRevision revision
         }
 
 
 type Route
     = OverviewRoute
-    | RecipeRoute String
+    | RecipeRoute RecipeId
     | NewRoute
-    | EditRoute String
+    | EditRoute RecipeId
     | ShoppingListRoute
     | SettingsRoute
 
@@ -938,22 +1034,23 @@ screenFromRoute state route =
         OverviewRoute ->
             Overview
 
-        RecipeRoute title ->
-            Dict.get title state.recipes
+        RecipeRoute id ->
+            Db.get state.recipes id
                 |> Maybe.map
-                    (\{ method } ->
+                    (\{ recipe } ->
                         Recipe
-                            (Recipe.from title method)
+                            id
+                            recipe
                             { showWakeVideo = False
                             }
                     )
                 |> Maybe.withDefault Overview
 
         NewRoute ->
-            Edit { code = "", failure = Nothing }
+            New { code = "", failure = Nothing }
 
-        EditRoute title ->
-            Dict.get title state.recipes
+        EditRoute id ->
+            Db.get state.recipes id
                 |> Maybe.map
                     (\{ code } ->
                         Edit { code = code, failure = Nothing }
@@ -977,14 +1074,14 @@ stringFromRoute route =
         OverviewRoute ->
             "#"
 
-        RecipeRoute title ->
-            "#recipe:" ++ Url.percentEncode title
+        RecipeRoute id ->
+            "#recipe:" ++ Url.percentEncode (Id.toString id)
 
         NewRoute ->
             "#new"
 
-        EditRoute title ->
-            "#edit:" ++ Url.percentEncode title
+        EditRoute id ->
+            "#edit:" ++ Url.percentEncode (Id.toString id)
 
         ShoppingListRoute ->
             "#shopping"
@@ -1075,6 +1172,7 @@ parseRoute url =
 
                 else if String.startsWith "recipe:" raw then
                     extractFrom 7 raw
+                        |> Maybe.map Id.fromString
                         |> Maybe.map RecipeRoute
 
                 else if raw == "new" then
@@ -1082,6 +1180,7 @@ parseRoute url =
 
                 else if String.startsWith "edit:" raw then
                     extractFrom 5 raw
+                        |> Maybe.map Id.fromString
                         |> Maybe.map EditRoute
 
                 else if raw == "shopping" then
@@ -1095,10 +1194,10 @@ parseRoute url =
             )
 
 
-saveRecipeCmd : { title : String, code : String, revision : Revision } -> Cmd msg
+saveRecipeCmd : { id : RecipeId, code : String, revision : Revision } -> Cmd msg
 saveRecipeCmd entry =
     saveRecipe
-        { title = entry.title
+        { title = Id.toString entry.id
         , code = entry.code
         , revision = codeFromRevision entry.revision
         }
@@ -1107,15 +1206,28 @@ saveRecipeCmd entry =
 port saveRecipe : { title : String, code : String, revision : Maybe String } -> Cmd msg
 
 
-saveRecipeChecksCmd : String -> Set String -> Cmd msg
-saveRecipeChecksCmd recipeTitle checks =
+saveRecipeChecksCmd : RecipeId -> Set String -> Cmd msg
+saveRecipeChecksCmd id checks =
+    let
+        title =
+            Id.toString id
+    in
     saveRecipeChecks
-        { title = recipeTitle
+        { title = title
         , checks = checks |> Set.toList
         }
 
 
 port saveRecipeChecks : { title : String, checks : List String } -> Cmd msg
+
+
+removeRecipeCmd : RecipeId -> Cmd msg
+removeRecipeCmd id =
+    let
+        fileName =
+            Id.toString id
+    in
+    removeRecipe fileName
 
 
 port removeRecipe : String -> Cmd msg
@@ -1197,19 +1309,26 @@ view model =
         ( maybeSubtitle, body ) =
             case model.screen of
                 Overview ->
-                    viewOverview model.language (Dict.keys state.recipes)
+                    viewOverview model.language
+                        (state.recipes
+                            |> Db.toList
+                            |> List.map
+                                (Tuple.mapSecond
+                                    (\entry ->
+                                        Recipe.title entry.recipe
+                                    )
+                                )
+                        )
 
-                Recipe recipe options ->
+                Recipe id recipe options ->
                     let
-                        title =
-                            Recipe.title recipe
-
                         checks =
-                            Dict.get title state.recipes
+                            Db.get state.recipes id
                                 |> Maybe.map .checks
                                 |> Maybe.withDefault Set.empty
                     in
                     viewRecipe model.language
+                        id
                         recipe
                         { checks = checks
                         , showVideo = options.showWakeVideo
@@ -1217,8 +1336,11 @@ view model =
                             state.wakeVideoId
                         }
 
+                New { code, failure } ->
+                    viewEditRecipe model.language code failure Add
+
                 Edit { code, failure } ->
-                    viewEditRecipe model.language code failure
+                    viewEditRecipe model.language code failure Update
 
                 Shopping ->
                     viewShoppingList model.language state.recipes state.shoppingList
@@ -1249,8 +1371,8 @@ view model =
     }
 
 
-viewOverview : Language -> List String -> ( Maybe String, Html Msg )
-viewOverview language recipeTitles =
+viewOverview : Language -> List ( RecipeId, String ) -> ( Maybe String, Html Msg )
+viewOverview language recipes =
     ( Nothing
     , Html.div []
         [ Html.div [ css [ toolbarSpacingStyle, Css.marginBottom (rem 1) ] ] [ languagePicker language, navLink [] language.overview.goToSettings SettingsRoute ]
@@ -1259,7 +1381,7 @@ viewOverview language recipeTitles =
             [ navLink [] language.overview.goToShoppingList ShoppingListRoute
             ]
         , toolbar [ linkButton language.overview.newRecipe NewRoute ]
-        , viewRecipeList language recipeTitles
+        , viewRecipeList language recipes
         ]
     )
 
@@ -1288,18 +1410,18 @@ languagePicker currentLanguage =
         )
 
 
-viewRecipeList : Language -> List String -> Html Msg
-viewRecipeList language recipeTitles =
+viewRecipeList : Language -> List ( RecipeId, String ) -> Html Msg
+viewRecipeList language recipes =
     contentList
         (noRecipes language)
         (ul
             [ recipeListStyle ]
             []
         )
-        (\title ->
-            Html.li [] [ viewRecipeLink title ]
+        (\( id, title ) ->
+            Html.li [] [ viewRecipeLink id title ]
         )
-        recipeTitles
+        recipes
 
 
 noRecipes : Language -> List (Html Msg)
@@ -1315,12 +1437,12 @@ recipeListStyle =
         ]
 
 
-viewRecipeLink : String -> Html Msg
-viewRecipeLink title =
+viewRecipeLink : RecipeId -> String -> Html Msg
+viewRecipeLink id title =
     Html.a
         [ css [ recipeLinkStyle ]
         , Attributes.href
-            (RecipeRoute title |> stringFromRoute)
+            (RecipeRoute id |> stringFromRoute)
         ]
         [ Html.text title
         ]
@@ -1349,8 +1471,8 @@ type alias RecipeViewOptions =
     }
 
 
-viewRecipe : Language -> Recipe -> RecipeViewOptions -> ( Maybe String, Html Msg )
-viewRecipe language recipe options =
+viewRecipe : Language -> RecipeId -> Recipe -> RecipeViewOptions -> ( Maybe String, Html Msg )
+viewRecipe language id recipe options =
     let
         title =
             Recipe.title recipe
@@ -1365,7 +1487,7 @@ viewRecipe language recipe options =
                 [ Html.text language.recipe.noIngredientsRequired ]
                 ingredientMap
                 options.checks
-                (UpdateCheckOnRecipe title)
+                (UpdateCheckOnRecipe id)
 
         stepsView =
             Recipe.map
@@ -1405,8 +1527,8 @@ viewRecipe language recipe options =
         [ Html.nav []
             [ backToOverview language
             , toolbar
-                [ linkButton language.recipe.edit (EditRoute <| Recipe.title recipe)
-                , button [] language.recipe.delete (DeleteRecipe <| Recipe.title recipe)
+                [ linkButton language.recipe.edit (EditRoute id)
+                , button [] language.recipe.delete (DeleteRecipe id)
                 ]
             , details [ Css.marginTop (rem 1), Css.marginBottom (rem 1) ]
                 []
@@ -1461,7 +1583,7 @@ viewRecipe language recipe options =
                                     [ toolbar
                                         [ smallButton []
                                             language.clearChecks
-                                            (ClearRecipeChecks title)
+                                            (ClearRecipeChecks id)
                                         ]
                                     ]
                                )
@@ -1564,8 +1686,8 @@ viewVideo id =
         ]
 
 
-viewEditRecipe : Language -> String -> Maybe RecipeParser.Failure -> ( Maybe String, Html Msg )
-viewEditRecipe language code maybeFailure =
+viewEditRecipe : Language -> String -> Maybe RecipeParser.Failure -> Msg -> ( Maybe String, Html Msg )
+viewEditRecipe language code maybeFailure action =
     ( Nothing
     , Html.div []
         [ Html.nav [] [ backToOverview language ]
@@ -1608,7 +1730,7 @@ viewEditRecipe language code maybeFailure =
                 ]
             ]
             []
-        , button [] language.editRecipe.save Save
+        , button [] language.editRecipe.save action
         ]
     )
 
@@ -1620,12 +1742,31 @@ viewShoppingList language recipes shoppingList =
         selectedRecipesView =
             [ let
                 selectedRecipes =
-                    shoppingList.selectedRecipes |> Set.toList
+                    shoppingList.selectedRecipes
+                        |> Set.toList
+                        |> List.filterMap
+                            (\rawId ->
+                                let
+                                    id =
+                                        Id.fromString rawId
+                                in
+                                Db.get recipes id
+                                    |> Maybe.map
+                                        (\entry ->
+                                            ( id, entry )
+                                        )
+                            )
 
                 unselectedRecipes =
                     recipes
-                        |> Dict.keys
-                        |> List.filter (\title -> not <| Set.member title shoppingList.selectedRecipes)
+                        |> Db.filter
+                            (\( _, entry ) ->
+                                let
+                                    title =
+                                        Recipe.title entry.recipe
+                                in
+                                not <| Set.member title shoppingList.selectedRecipes
+                            )
 
                 summaryStyles =
                     [ headingFontStyle ]
@@ -1651,34 +1792,34 @@ viewShoppingList language recipes shoppingList =
                         { summary =
                             ( summaryStyles
                             , [ Html.text
-                                    (language.shoppingList.addRecipesWithCount <| List.length unselectedRecipes)
+                                    (language.shoppingList.addRecipesWithCount <| List.length <| Db.toList unselectedRecipes)
                               ]
                             )
                         , children =
                             [ contentList
-                                (if Dict.isEmpty recipes then
+                                (if Db.toList recipes |> List.isEmpty then
                                     noRecipes language
 
                                  else
                                     [ Html.text language.shoppingList.allRecipesSelected ]
                                 )
                                 (ul [ recipeListStyle ] [])
-                                (\title ->
+                                (\( id, entry ) ->
                                     Html.li []
-                                        [ viewRecipeLink title
-                                        , smallButton [ Css.marginLeft (rem 0.5) ] language.shoppingList.add (AddRecipeToShoppingList title)
+                                        [ viewRecipeLink id (Recipe.title entry.recipe)
+                                        , smallButton [ Css.marginLeft (rem 0.5) ] language.shoppingList.add (AddRecipeToShoppingList id)
                                         ]
                                 )
-                                unselectedRecipes
+                                (Db.toList unselectedRecipes)
                             ]
                         }
                     , contentList
                         [ Html.text language.shoppingList.noRecipeSelected ]
                         (ul [ recipeListStyle ] [])
-                        (\title ->
+                        (\( id, entry ) ->
                             Html.li []
-                                [ viewRecipeLink title
-                                , smallButton [ Css.marginLeft (rem 0.5) ] language.shoppingList.remove (RemoveRecipeFromShoppingList title)
+                                [ viewRecipeLink id (Recipe.title entry.recipe)
+                                , smallButton [ Css.marginLeft (rem 0.5) ] language.shoppingList.remove (RemoveRecipeFromShoppingList id)
                                 ]
                         )
                         selectedRecipes
@@ -1715,8 +1856,9 @@ ingredientsFromRecipes : RecipeStore -> Set String -> List Ingredient
 ingredientsFromRecipes recipes selectedRecipes =
     selectedRecipes
         |> Set.toList
-        |> List.filterMap (\title -> Dict.get title recipes)
-        |> List.concatMap (\{ method } -> Recipe.ingredients method)
+        |> List.map Id.fromString
+        |> List.filterMap (\id -> Db.get recipes id)
+        |> List.concatMap (\{ recipe } -> Recipe.method recipe |> Recipe.ingredients)
 
 
 viewSettings : Language -> SettingsState -> State -> ( Maybe String, Html Msg )
