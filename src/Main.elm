@@ -5,8 +5,9 @@ import Browser.Navigation as Navigation
 import Css exposing (auto, num, pct, rem, zero)
 import Css.Global as Global
 import Db exposing (Db)
-import Dict exposing (Dict)
+import Dict
 import Dropbox
+import DropboxSync
 import Embed.Youtube
 import Embed.Youtube.Attributes
 import FileName
@@ -21,8 +22,9 @@ import Language
 import List.Extra as List
 import Recipe exposing (Recipe)
 import RecipeParser
+import Revision exposing (Revision(..))
 import Set exposing (Set)
-import Task exposing (Task)
+import Task
 import TypedUrl
 import Url exposing (Url)
 
@@ -55,7 +57,7 @@ type alias State =
     { recipes : RecipeStore
     , shoppingList : ShoppingList
     , wakeVideoId : String
-    , dropbox : Maybe Credentials
+    , dropbox : Maybe DropboxSync.State
     , nonce : Maybe String
     }
 
@@ -74,30 +76,6 @@ type alias RecipeEntry =
     , checks : Set String
     , revision : Revision
     }
-
-
-type Revision
-    = NewRevision
-    | ChangedRevision String
-    | SyncedRevision String
-
-
-codeFromRevision : Revision -> Maybe String
-codeFromRevision revision =
-    case revision of
-        NewRevision ->
-            Nothing
-
-        ChangedRevision code ->
-            Just code
-
-        SyncedRevision code ->
-            Just code
-
-
-type Credentials
-    = LoggedIn Dropbox.UserAuth
-    | CredentialsError
 
 
 type alias ShoppingList =
@@ -194,14 +172,14 @@ init flags url key =
                     (\raw ->
                         Decode.decodeValue Dropbox.decodeUserAuth raw
                             |> Result.toMaybe
-                            |> Maybe.map (\auth -> ( Just (LoggedIn auth), syncDropbox auth ))
+                            |> Maybe.map (\auth -> ( Just (DropboxSync.LoggedIn auth), DropboxSync.startSyncCmd auth DropboxSync ))
                     )
                 |> Maybe.withDefault ( Nothing, Cmd.none )
 
         state =
             { recipes = recipes
             , shoppingList = shoppingList
-            , wakeVideoId = settings.wakeVideoId |> Maybe.withDefault "14Cf79j92xA"
+            , wakeVideoId = settings.wakeVideoId |> Maybe.withDefault "14Cf79j92xA" -- The id of a video showing 10 seconds of black
             , dropbox = dropbox
             , nonce = flags.nonce
             }
@@ -234,10 +212,10 @@ type Msg
     | SwitchLanguage String
     | StartLogin
     | NonceGenerated String
-    | SyncDropbox (Result Dropbox.ListFolderError Dropbox.ListFolderResponse)
-    | DropboxUploads (Result Dropbox.UploadError (List Dropbox.FileMetadata))
-    | DropboxDownloads (Result Dropbox.DownloadError (List Dropbox.DownloadResponse))
-    | DropboxDeleted (Result Dropbox.DeleteError Dropbox.Metadata)
+    | DropboxSync DropboxSync.StartSyncResult
+    | DropboxUploads DropboxSync.UploadResult
+    | DropboxDownloads DropboxSync.DownloadResult
+    | DropboxDeleted DropboxSync.DeletedResult
     | UrlChanged Url
     | LinkClicked Browser.UrlRequest
 
@@ -256,14 +234,14 @@ update msg model =
 
                 removeFileCmd =
                     case state.dropbox of
-                        Just (LoggedIn auth) ->
+                        Just (DropboxSync.LoggedIn auth) ->
                             let
                                 revision =
                                     Db.get state.recipes id
                                         |> Maybe.map .revision
                                         |> Maybe.withDefault NewRevision
                             in
-                            removeFile auth id revision
+                            DropboxSync.removeFile auth id revision
                                 |> Task.attempt DropboxDeleted
 
                         _ ->
@@ -312,13 +290,10 @@ update msg model =
                                 revision =
                                     NewRevision
 
-                                method =
-                                    Recipe.method recipe
-
                                 uploadCmd =
                                     case state.dropbox of
-                                        Just (LoggedIn auth) ->
-                                            uploadFile auth id (codeFromRevision revision) code
+                                        Just (DropboxSync.LoggedIn auth) ->
+                                            DropboxSync.uploadFile auth id (Revision.toString revision) code
                                                 |> Task.map List.singleton
                                                 |> Task.attempt DropboxUploads
 
@@ -382,17 +357,14 @@ update msg model =
                                 revision =
                                     oldRecipe
                                         |> Maybe.map .revision
-                                        |> Maybe.andThen codeFromRevision
+                                        |> Maybe.andThen Revision.toString
                                         |> Maybe.map ChangedRevision
                                         |> Maybe.withDefault NewRevision
 
-                                method =
-                                    Recipe.method recipe
-
                                 uploadCmd =
                                     case state.dropbox of
-                                        Just (LoggedIn auth) ->
-                                            uploadFile auth id (codeFromRevision revision) code
+                                        Just (DropboxSync.LoggedIn auth) ->
+                                            DropboxSync.uploadFile auth id (Revision.toString revision) code
                                                 |> Task.map List.singleton
                                                 |> Task.attempt DropboxUploads
 
@@ -724,219 +696,74 @@ update msg model =
             in
             ( model, cmd )
 
-        SyncDropbox result ->
+        DropboxSync result ->
             let
                 state =
                     model.state
+
+                cmd =
+                    DropboxSync.processStartSync
+                        result
+                        state.recipes
+                        state.dropbox
+                        { revision = .revision, content = .code }
+                        { upload = DropboxUploads, download = DropboxDownloads }
             in
-            case result of
-                Ok response ->
-                    let
-                        remoteRecipes =
-                            response.entries
-                                |> List.filterMap
-                                    (\entry ->
-                                        case entry of
-                                            Dropbox.FileMeta data ->
-                                                Just ( data.name, data.rev )
-
-                                            -- TODO: Handle deleted files.
-                                            _ ->
-                                                Nothing
-                                    )
-
-                        ( statuses, localOnlyRecipes ) =
-                            remoteRecipes
-                                |> List.foldl
-                                    (\( fileName, revision ) ( stats, recipes ) ->
-                                        let
-                                            id =
-                                                idFromDropboxFileName fileName
-
-                                            recipe =
-                                                Db.get recipes id
-
-                                            newRecipes =
-                                                Db.remove id recipes
-
-                                            newStatus =
-                                                recipe
-                                                    |> Maybe.map
-                                                        (\entry ->
-                                                            case entry.revision of
-                                                                SyncedRevision code ->
-                                                                    if code == revision then
-                                                                        Synced
-
-                                                                    else
-                                                                        NeedsDownload id
-
-                                                                ChangedRevision code ->
-                                                                    if code == revision then
-                                                                        NeedsUpload
-                                                                            { id = id
-                                                                            , revision = code
-                                                                            , content = entry.code
-                                                                            }
-
-                                                                    else
-                                                                        Conflict id
-
-                                                                NewRevision ->
-                                                                    -- The file already exists on the remote.
-                                                                    Conflict id
-                                                        )
-                                                    |> Maybe.withDefault (NeedsDownload id)
-                                        in
-                                        ( newStatus :: stats, newRecipes )
-                                    )
-                                    ( [], state.recipes )
-                    in
-                    case state.dropbox of
-                        Just (LoggedIn auth) ->
-                            let
-                                ( uploadUpdateTasks, downloadTasks ) =
-                                    statuses
-                                        |> List.foldl
-                                            (\status ( up, down ) ->
-                                                case status of
-                                                    Synced ->
-                                                        ( up, down )
-
-                                                    Conflict _ ->
-                                                        -- TODO: Notify user
-                                                        ( up, down )
-
-                                                    NeedsUpload entry ->
-                                                        ( uploadFile auth entry.id (Just entry.revision) entry.content :: up, down )
-
-                                                    NeedsDownload file ->
-                                                        ( up, downloadFile auth file :: down )
-                                            )
-                                            ( [], [] )
-
-                                uploadTasks =
-                                    uploadUpdateTasks
-                                        ++ (localOnlyRecipes
-                                                |> Db.toList
-                                                |> List.map
-                                                    (\( id, entry ) ->
-                                                        uploadFile auth id Nothing entry.code
-                                                    )
-                                           )
-
-                                cmd =
-                                    Cmd.batch
-                                        [ Task.sequence uploadTasks |> Task.attempt DropboxUploads
-                                        , Task.sequence downloadTasks |> Task.attempt DropboxDownloads
-                                        ]
-                            in
-                            ( model, cmd )
-
-                        _ ->
-                            -- TODO: Ask for login
-                            ( model, Cmd.none )
-
-                Err error ->
-                    -- TODO: Handle error
-                    ( model, Cmd.none )
+            ( model
+            , cmd
+            )
 
         DropboxUploads result ->
             let
                 state =
                     model.state
-            in
-            case result of
-                Ok responses ->
-                    let
-                        newRecipes =
-                            responses
-                                |> List.foldl
-                                    (\response recipes ->
-                                        let
-                                            id =
-                                                idFromDropboxFileName response.name
-                                        in
-                                        Db.update id
-                                            (Maybe.map
-                                                (\entry ->
-                                                    { entry | revision = SyncedRevision response.rev }
-                                                )
-                                            )
-                                            recipes
-                                    )
-                                    state.recipes
-                    in
-                    ( { model | state = { state | recipes = newRecipes } }, Cmd.none )
 
-                Err error ->
-                    -- TODO: Handle error
-                    ( model, Cmd.none )
+                newRecipes =
+                    DropboxSync.processUploads result (\rev entry -> { entry | revision = rev }) state.recipes
+            in
+            ( { model | state = { state | recipes = newRecipes } }, Cmd.none )
 
         DropboxDownloads result ->
             let
                 state =
                     model.state
+
+                ( newRecipes, newRecipeEntries ) =
+                    DropboxSync.processDownloads
+                        result
+                        (\code rev ->
+                            RecipeParser.parse code
+                                |> Result.toMaybe
+                                |> Maybe.map
+                                    (\recipe ->
+                                        { recipe = recipe
+                                        , code = code
+                                        , checks = Set.empty
+                                        , revision = rev
+                                        }
+                                    )
+                        )
+                        state.recipes
+
+                saveCmd =
+                    newRecipeEntries
+                        -- TODO: Handle errors
+                        |> List.filterMap identity
+                        |> List.map
+                            (\( id, entry ) ->
+                                saveRecipeCmd { id = id, code = entry.code, revision = entry.revision }
+                            )
+                        |> Cmd.batch
             in
-            case result of
-                Ok responses ->
-                    let
-                        newRecipeEntries =
-                            responses
-                                |> List.filterMap
-                                    (\response ->
-                                        let
-                                            id =
-                                                idFromDropboxFileName response.name
-                                        in
-                                        case RecipeParser.parse response.content of
-                                            Ok recipe ->
-                                                Just
-                                                    ( id
-                                                    , { recipe = recipe
-                                                      , code = response.content
-                                                      , checks = Set.empty
-                                                      , revision = SyncedRevision response.rev
-                                                      }
-                                                    )
-
-                                            Err err ->
-                                                -- TODO: Notify about error
-                                                Nothing
-                                    )
-
-                        newRecipes =
-                            newRecipeEntries
-                                |> List.foldl (\row recipes -> Db.insert row recipes) state.recipes
-
-                        cmd =
-                            newRecipeEntries
-                                |> List.map
-                                    (\( id, entry ) ->
-                                        saveRecipeCmd { id = id, code = entry.code, revision = entry.revision }
-                                    )
-                                |> Cmd.batch
-                    in
-                    ( { model | state = { state | recipes = newRecipes } }, cmd )
-
-                Err error ->
-                    -- TODO: Handle error
-                    ( model, Cmd.none )
+            ( { model | state = { state | recipes = newRecipes } }, saveCmd )
 
         DropboxDeleted result ->
-            case result of
-                Ok metadata ->
-                    case metadata of
-                        Dropbox.FileMeta info ->
-                            ( model, Cmd.none )
+            if DropboxSync.processDeleted result then
+                ( model, Cmd.none )
 
-                        _ ->
-                            -- TODO: Handle error
-                            ( model, Cmd.none )
-
-                Err error ->
-                    --TODO: Handle error
-                    ( model, Cmd.none )
+            else
+                -- TODO: Handle error
+                ( model, Cmd.none )
 
         UrlChanged url ->
             let
@@ -958,65 +785,6 @@ update msg model =
 
                 Browser.External href ->
                     ( model, Navigation.load href )
-
-
-idFromDropboxFileName : String -> RecipeId
-idFromDropboxFileName fileName =
-    -- Remove .recipe.txt ending
-    String.dropRight 11 fileName
-        |> Id.fromString
-
-
-type Status
-    = Synced
-    | NeedsDownload RecipeId
-    | NeedsUpload { id : RecipeId, revision : String, content : String }
-    | Conflict RecipeId
-
-
-uploadFile : Dropbox.UserAuth -> RecipeId -> Maybe String -> String -> Task Dropbox.UploadError Dropbox.FileMetadata
-uploadFile auth id revision content =
-    let
-        fileName =
-            Id.toString id
-
-        mode =
-            case revision of
-                Just code ->
-                    Dropbox.Update code
-
-                Nothing ->
-                    Dropbox.Add
-    in
-    Dropbox.upload auth
-        { path = "/recipes/" ++ fileName ++ ".recipe.txt"
-        , mode = mode
-        , autorename = False
-        , clientModified = Nothing
-        , mute = False
-        , content = content
-        }
-
-
-downloadFile : Dropbox.UserAuth -> RecipeId -> Task Dropbox.DownloadError Dropbox.DownloadResponse
-downloadFile auth id =
-    let
-        fileName =
-            Id.toString id
-    in
-    Dropbox.download auth { path = "/recipes/" ++ fileName ++ ".recipe.txt" }
-
-
-removeFile : Dropbox.UserAuth -> RecipeId -> Revision -> Task Dropbox.DeleteError Dropbox.Metadata
-removeFile auth id revision =
-    let
-        fileName =
-            Id.toString id
-    in
-    Dropbox.delete auth
-        { path = "/recipes/" ++ fileName ++ ".recipe.txt"
-        , parentRev = codeFromRevision revision
-        }
 
 
 type Route
@@ -1107,18 +875,6 @@ parseUrl url =
                 |> Maybe.withDefault (ParsedRoute OverviewRoute)
 
 
-syncDropbox : Dropbox.UserAuth -> Cmd Msg
-syncDropbox auth =
-    Dropbox.listFolder auth
-        { path = "/recipes"
-        , recursive = False
-        , includeMediaInfo = False
-        , includeDeleted = False
-        , includeHasExplicitSharedMembers = False
-        }
-        |> Task.attempt SyncDropbox
-
-
 applyUrl : State -> Url -> ( Screen, State, Cmd Msg )
 applyUrl state url =
     case parseUrl url of
@@ -1132,18 +888,18 @@ applyUrl state url =
                         let
                             newState =
                                 { state
-                                    | dropbox = Just (LoggedIn response.userAuth)
+                                    | dropbox = Just (DropboxSync.LoggedIn response.userAuth)
                                 }
                         in
                         ( screenFromRoute state SettingsRoute
                         , newState
-                        , Cmd.batch [ saveSettingsCmd newState, syncDropbox response.userAuth ]
+                        , Cmd.batch [ saveSettingsCmd newState, DropboxSync.startSyncCmd response.userAuth DropboxSync ]
                         )
 
                     else
                         ( screenFromRoute state SettingsRoute
                         , { state
-                            | dropbox = Just CredentialsError -- TODO: Inform user about possible attack.
+                            | dropbox = Just DropboxSync.CredentialsError -- TODO: Inform user about possible attack.
                           }
                         , Cmd.none
                         )
@@ -1151,7 +907,7 @@ applyUrl state url =
                 _ ->
                     ( screenFromRoute state SettingsRoute
                     , { state
-                        | dropbox = Just CredentialsError -- TODO: Explain error to user.
+                        | dropbox = Just DropboxSync.CredentialsError -- TODO: Explain error to user.
                       }
                     , Cmd.none
                     )
@@ -1199,7 +955,7 @@ saveRecipeCmd entry =
     saveRecipe
         { title = Id.toString entry.id
         , code = entry.code
-        , revision = codeFromRevision entry.revision
+        , revision = Revision.toString entry.revision
         }
 
 
@@ -1269,7 +1025,7 @@ saveSettingsCmd state =
                 |> Maybe.andThen
                     (\credentials ->
                         case credentials of
-                            LoggedIn userAuth ->
+                            DropboxSync.LoggedIn userAuth ->
                                 Just (Dropbox.encodeUserAuth userAuth)
 
                             _ ->
@@ -1883,10 +1639,10 @@ viewSettings language settingsState state =
                 (case state.dropbox of
                     Just credentials ->
                         case credentials of
-                            LoggedIn info ->
+                            DropboxSync.LoggedIn info ->
                                 [ Html.text "Logged in" ]
 
-                            CredentialsError ->
+                            DropboxSync.CredentialsError ->
                                 [ Html.text "An error occurred."
                                 ]
 

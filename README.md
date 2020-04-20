@@ -38,6 +38,7 @@ To build everything, run `npm run build` and deploy the `dist` folder.
 - Overview
   - [ ] Filter recipes.
   - [ ] Search by ingredient.
+  - [ ] For duplicated titles, show file name as additional info.
 - Recipe
   - [x] Indicate how many ingredients there are in ingredient heading.
   - [x] Show quantities in method. This is helpful when assembling ingredients while cooking.

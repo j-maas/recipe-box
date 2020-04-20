@@ -2,7 +2,6 @@ module FileName exposing (FileName, autorename)
 
 import Db exposing (Db)
 import Id exposing (Id)
-import Regex exposing (Regex)
 import Set exposing (Set)
 import String.Extra as String
 
