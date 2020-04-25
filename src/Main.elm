@@ -14,6 +14,7 @@ import FileName
 import Html.Styled as Html exposing (Html)
 import Html.Styled.Attributes as Attributes exposing (css)
 import Html.Styled.Events as Events
+import Http
 import Id exposing (Id)
 import Ingredient exposing (Ingredient)
 import IngredientMap exposing (IngredientMap)
@@ -211,6 +212,8 @@ type Msg
     | SetWakeVideoUrl String
     | SwitchLanguage String
     | StartLogin
+    | Logout
+    | LoggedOut (Result Http.Error ())
     | NonceGenerated String
     | DropboxSync DropboxSync.StartSyncResult
     | DropboxUploads DropboxSync.UploadResult
@@ -658,43 +661,34 @@ update msg model =
             ( model, generateNonce () )
 
         NonceGenerated nonce ->
-            let
-                {-
-                   deploymentUrl =
-                       { protocol = Url.Https
-                       , host = "y0hy0h.github.io"
-                       , port_ = Nothing
-                       , path = "/recipe-box"
-                       , query = Nothing
-                       , fragment = Nothing
-                       }
-                -}
-                testUrl =
-                    let
-                        _ =
-                            Debug.log "Remove the localhost Dropbox auth redirect!" ()
-                    in
-                    { protocol = Url.Http
-                    , host = "localhost"
-                    , port_ = Just 8000
-                    , path = ""
-                    , query = Nothing
-                    , fragment = Nothing
-                    }
+            ( model, DropboxSync.loginCmd nonce )
 
-                cmd =
-                    Dropbox.authorize
-                        { clientId = "916swzhdm7w2eak"
-                        , state = Just nonce
-                        , requireRole = Nothing
-                        , forceReapprove = False
-                        , disableSignup = False
-                        , locale = Nothing
-                        , forceReauthentication = False
-                        }
-                        testUrl
+        Logout ->
+            let
+                state =
+                    model.state
+
+                logoutCmd =
+                    case state.dropbox of
+                        Just dropbox ->
+                            DropboxSync.logoutCmd dropbox LoggedOut
+
+                        Nothing ->
+                            Cmd.none
+
+                newState =
+                    { state | dropbox = Nothing }
             in
-            ( model, cmd )
+            ( { model | state = newState }
+            , Cmd.batch
+                [ saveSettingsCmd newState
+                , logoutCmd
+                ]
+            )
+
+        LoggedOut _ ->
+            -- TODO: Allow user to retry on error
+            ( model, Cmd.none )
 
         DropboxSync result ->
             let
@@ -858,59 +852,27 @@ stringFromRoute route =
             "#settings"
 
 
-type ParsedRoute
-    = ParsedRoute Route
-    | DropboxAuth Dropbox.AuthorizeResult
-
-
-parseUrl : Url -> ParsedRoute
-parseUrl url =
-    case parseRoute url of
-        Just route ->
-            ParsedRoute route
-
-        Nothing ->
-            Dropbox.parseAuthorizeResult url
-                |> Maybe.map DropboxAuth
-                |> Maybe.withDefault (ParsedRoute OverviewRoute)
-
-
 applyUrl : State -> Url -> ( Screen, State, Cmd Msg )
 applyUrl state url =
-    case parseUrl url of
-        ParsedRoute route ->
+    case parseRoute url of
+        Just route ->
             ( screenFromRoute state route, state, Cmd.none )
 
-        DropboxAuth result ->
+        Nothing ->
+            let
+                result =
+                    state.nonce
+                        |> Maybe.map
+                            (\nonce ->
+                                DropboxSync.parseLoginUrl nonce url
+                            )
+            in
             case result of
-                Dropbox.AuthorizeOk response ->
-                    if response.state == state.nonce then
-                        let
-                            newState =
-                                { state
-                                    | dropbox = Just (DropboxSync.LoggedIn response.userAuth)
-                                }
-                        in
-                        ( screenFromRoute state SettingsRoute
-                        , newState
-                        , Cmd.batch [ saveSettingsCmd newState, DropboxSync.startSyncCmd response.userAuth DropboxSync ]
-                        )
+                Just newDropbox ->
+                    ( screenFromRoute state SettingsRoute, { state | dropbox = newDropbox }, Cmd.none )
 
-                    else
-                        ( screenFromRoute state SettingsRoute
-                        , { state
-                            | dropbox = Just DropboxSync.CredentialsError -- TODO: Inform user about possible attack.
-                          }
-                        , Cmd.none
-                        )
-
-                _ ->
-                    ( screenFromRoute state SettingsRoute
-                    , { state
-                        | dropbox = Just DropboxSync.CredentialsError -- TODO: Explain error to user.
-                      }
-                    , Cmd.none
-                    )
+                Nothing ->
+                    ( Overview, state, Cmd.none )
 
 
 parseRoute : Url -> Maybe Route
@@ -1630,24 +1592,37 @@ viewSettings language settingsState state =
 
         wakeVideoSetting =
             Html.div []
-                [ textInput language.settings.videoUrlLabel settingsState.wakeVideoIdField SetWakeVideoUrl wakeVideoError
+                [ h2 [] [] [ Html.text "Keep screen awake video" ]
+                , textInput language.settings.videoUrlLabel settingsState.wakeVideoIdField SetWakeVideoUrl wakeVideoError
                 , viewVideo state.wakeVideoId
                 ]
 
         dropboxSetting =
+            let
+                loginButton =
+                    button [] "Log into Dropbox" StartLogin
+
+                logoutButton =
+                    button [] "Log out of Dropbox" Logout
+            in
             Html.div []
-                (case state.dropbox of
-                    Just credentials ->
-                        case credentials of
-                            DropboxSync.LoggedIn info ->
-                                [ Html.text "Logged in" ]
+                (h2 [] [] [ Html.text "Dropbox" ]
+                    :: (case state.dropbox of
+                            Just credentials ->
+                                case credentials of
+                                    DropboxSync.LoggedIn _ ->
+                                        [ p [] [] [ Html.text "You are currently logged in to Dropbox." ]
+                                        , logoutButton
+                                        ]
 
-                            DropboxSync.CredentialsError ->
-                                [ Html.text "An error occurred."
-                                ]
+                                    DropboxSync.LoginErr error ->
+                                        [ p [] [] [ Html.text "An error occurred after trying to log in." ]
+                                        , loginButton
+                                        ]
 
-                    Nothing ->
-                        [ button [] "Log into Dropbox" StartLogin ]
+                            Nothing ->
+                                [ loginButton ]
+                       )
                 )
       in
       Html.div []

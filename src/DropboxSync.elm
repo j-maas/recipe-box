@@ -1,15 +1,120 @@
-module DropboxSync exposing (DeletedResult, DownloadResult, StartSyncResult, State(..), UploadResult, downloadFile, processDeleted, processDownloads, processStartSync, processUploads, removeFile, startSyncCmd, uploadFile)
+module DropboxSync exposing (DeletedResult, DownloadResult, LoginError(..), StartSyncResult, State(..), UploadResult, downloadFile, loginCmd, logoutCmd, parseLoginUrl, processDeleted, processDownloads, processStartSync, processUploads, removeFile, startSyncCmd, uploadFile)
 
 import Db exposing (Db)
 import Dropbox
+import Http
 import Id exposing (Id)
 import Revision exposing (Revision(..))
 import Task exposing (Task)
+import Url exposing (Url)
 
 
 type State
     = LoggedIn Dropbox.UserAuth
-    | CredentialsError
+    | LoginErr LoginError
+
+
+loginCmd : String -> Cmd msg
+loginCmd nonce =
+    let
+        {-
+           deploymentUrl =
+               { protocol = Url.Https
+               , host = "y0hy0h.github.io"
+               , port_ = Nothing
+               , path = "/recipe-box"
+               , query = Nothing
+               , fragment = Nothing
+               }
+        -}
+        testUrl =
+            let
+                _ =
+                    Debug.log "Remove the localhost Dropbox auth redirect!" ()
+            in
+            { protocol = Url.Http
+            , host = "localhost"
+            , port_ = Just 8000
+            , path = ""
+            , query = Nothing
+            , fragment = Nothing
+            }
+    in
+    Dropbox.authorize
+        { clientId = "916swzhdm7w2eak"
+        , state = Just nonce
+        , requireRole = Nothing
+        , forceReapprove = False
+        , disableSignup = False
+        , locale = Nothing
+        , forceReauthentication = False
+        }
+        testUrl
+
+
+parseLoginUrl : String -> Url -> Maybe State
+parseLoginUrl nonce url =
+    Dropbox.parseAuthorizeResult url
+        |> Maybe.map (processLoginResult nonce)
+
+
+type alias LoginResult =
+    Dropbox.AuthorizeResult
+
+
+type LoginError
+    = AccessDenied
+    | TemporarilyUnavailable
+    | ManipulatedRequest
+      -- An error in the protocol, the user cannot do anything.
+    | ProtocolError
+
+
+processLoginResult : String -> LoginResult -> State
+processLoginResult nonce result =
+    let
+        parseLoginResult res =
+            case res of
+                Dropbox.AuthorizeOk response ->
+                    Ok response
+
+                Dropbox.DropboxAuthorizeErr error ->
+                    Err
+                        (case error.error of
+                            "access_denied" ->
+                                AccessDenied
+
+                            "temporarily_unavailable" ->
+                                TemporarilyUnavailable
+
+                            _ ->
+                                ProtocolError
+                        )
+
+                Dropbox.UnknownAccessTokenErr _ ->
+                    Err ProtocolError
+    in
+    case parseLoginResult result of
+        Ok response ->
+            if response.state == Just nonce then
+                LoggedIn response.userAuth
+
+            else
+                LoginErr ManipulatedRequest
+
+        Err error ->
+            LoginErr error
+
+
+logoutCmd : State -> (Result Http.Error () -> msg) -> Cmd msg
+logoutCmd state msg =
+    case state of
+        LoggedIn auth ->
+            Dropbox.tokenRevoke auth
+                |> Task.attempt msg
+
+        _ ->
+            Cmd.none
 
 
 startSyncCmd : Dropbox.UserAuth -> (StartSyncResult -> msg) -> Cmd msg
