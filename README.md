@@ -1,8 +1,9 @@
 # Recipe Box
 
 ## Getting started
-1. `npm install` to install dependencies.
-2. `npm run watch` to start a server that makes the app available at http://localhost:8000.
+1. Ensure that the [Git submodules](https://git-scm.com/book/en/v2/Git-Tools-Submodules) are initialized: `git submodule update --init`
+2. `npm install` to install dependencies.
+3. `npm run watch` to start a server that makes the app available at http://localhost:8000.
 
 Tests can be run with `npm run test`.
 
