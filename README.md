@@ -36,6 +36,7 @@ To build everything, run `npm run build` and deploy the `dist` folder.
   - [ ] Add indicator to top of files that explains how to view the recipes for people who do not know what to do with the files.
   - [ ] Add WebDav integration (for NextCloud).
   - [ ] Add DropBox integration.
+    - [ ] Show name of account when logged in.
 - Overview
   - [ ] Filter recipes.
   - [ ] Search by ingredient.
