@@ -1,17 +1,80 @@
-module DropboxSync exposing (DeletedResult, DownloadResult, LoginError(..), StartSyncResult, State(..), UploadResult, downloadFile, loginCmd, logoutCmd, parseLoginUrl, processDeleted, processDownloads, processStartSync, processUploads, removeFile, startSyncCmd, uploadFile)
+module DropboxSync exposing (DeletedResult, DownloadResult, FetchResult, LoginError(..), State, UploadResult, Msg, update, decodeState, deleteCmd, encodeState, loginCmd, logoutCmd, parseLoginUrl, syncCmd, uploadCmd)
 
 import Db exposing (Db)
 import Dropbox
 import Http
 import Id exposing (Id)
+import Json.Decode as Decode exposing (Decoder)
+import Json.Encode as Encode
 import Revision exposing (Revision(..))
 import Task exposing (Task)
 import Url exposing (Url)
 
 
-type State
-    = LoggedIn Dropbox.UserAuth
-    | LoginErr LoginError
+type alias State =
+    { auth : Dropbox.UserAuth
+    }
+
+
+type Msg
+    = Fetched FetchResult
+    | Uploaded UploadResult
+    | Downloaded DownloadResult
+    | Deleted DeletedResult
+
+
+update :
+    Msg
+    -> State
+    -> Db a
+    ->
+        { revision : a -> Revision
+        , content : a -> String
+        , create : String -> Revision -> Maybe a
+        , updateRevision : Revision -> a -> a
+        }
+    -> ( State, List (Db.Row a), Cmd Msg )
+update msg state db item =
+    case msg of
+        Fetched result ->
+            ( state
+            , []
+            , processFetched
+                result
+                db
+                state
+                item
+            )
+
+        Uploaded result ->
+            ( state
+            , processUploads result item.updateRevision db
+            , Cmd.none
+            )
+
+        Downloaded result ->
+            ( state
+            , processDownloads result item.create db
+            , Cmd.none
+            )
+
+        Deleted result ->
+            ( state, [], Cmd.none )
+
+
+encodeState : State -> Encode.Value
+encodeState state =
+    Dropbox.encodeUserAuth state.auth
+
+
+decodeState : Decoder State
+decodeState =
+    Dropbox.decodeUserAuth
+        |> Decode.map
+            (\auth ->
+                { auth = auth
+                }
+            )
 
 
 loginCmd : String -> Cmd msg
@@ -52,7 +115,7 @@ loginCmd nonce =
         testUrl
 
 
-parseLoginUrl : String -> Url -> Maybe State
+parseLoginUrl : String -> Url -> Maybe (Result LoginError State)
 parseLoginUrl nonce url =
     Dropbox.parseAuthorizeResult url
         |> Maybe.map (processLoginResult nonce)
@@ -64,13 +127,13 @@ type alias LoginResult =
 
 type LoginError
     = AccessDenied
-    | TemporarilyUnavailable
     | ManipulatedRequest
+    | TemporarilyUnavailable
       -- An error in the protocol, the user cannot do anything.
     | ProtocolError
 
 
-processLoginResult : String -> LoginResult -> State
+processLoginResult : String -> LoginResult -> Result LoginError State
 processLoginResult nonce result =
     let
         parseLoginResult res =
@@ -97,56 +160,48 @@ processLoginResult nonce result =
     case parseLoginResult result of
         Ok response ->
             if response.state == Just nonce then
-                LoggedIn response.userAuth
+                Ok { auth = response.userAuth }
 
             else
-                LoginErr ManipulatedRequest
+                Err ManipulatedRequest
 
         Err error ->
-            LoginErr error
+            Err error
 
 
 logoutCmd : State -> (Result Http.Error () -> msg) -> Cmd msg
 logoutCmd state msg =
-    case state of
-        LoggedIn auth ->
-            Dropbox.tokenRevoke auth
-                |> Task.attempt msg
-
-        _ ->
-            Cmd.none
+    Dropbox.tokenRevoke state.auth
+        |> Task.attempt msg
 
 
-startSyncCmd : Dropbox.UserAuth -> (StartSyncResult -> msg) -> Cmd msg
-startSyncCmd auth msg =
-    Dropbox.listFolder auth
+syncCmd : State -> Cmd Msg
+syncCmd state =
+    Dropbox.listFolder state.auth
         { path = "/recipes"
         , recursive = False
         , includeMediaInfo = False
         , includeDeleted = False
         , includeHasExplicitSharedMembers = False
         }
-        |> Task.attempt msg
+        |> Task.attempt Fetched
 
 
-type alias StartSyncResult =
+type alias FetchResult =
     Result Dropbox.ListFolderError Dropbox.ListFolderResponse
 
 
-processStartSync :
-    StartSyncResult
+processFetched :
+    FetchResult
     -> Db a
-    -> Maybe State
+    -> State
     ->
-        { revision : a -> Revision
-        , content : a -> String
+        { b
+            | revision : a -> Revision
+            , content : a -> String
         }
-    ->
-        { upload : UploadResult -> msg
-        , download : DownloadResult -> msg
-        }
-    -> Cmd msg
-processStartSync result db state extract msg =
+    -> Cmd Msg
+processFetched result db state extract =
     case result of
         Ok response ->
             let
@@ -184,7 +239,7 @@ processStartSync result db state extract msg =
                                                     case extract.revision entry of
                                                         SyncedRevision code ->
                                                             if code == revision then
-                                                                Synced
+                                                                SyncDone
 
                                                             else
                                                                 NeedsDownload id
@@ -209,95 +264,99 @@ processStartSync result db state extract msg =
                                 ( newStatus :: stats, newRecipes )
                             )
                             ( [], db )
-            in
-            case state of
-                Just (LoggedIn auth) ->
-                    let
-                        ( uploadUpdateTasks, downloadTasks ) =
-                            statuses
-                                |> List.foldl
-                                    (\status ( up, down ) ->
-                                        case status of
-                                            Synced ->
-                                                ( up, down )
 
-                                            Conflict _ ->
-                                                -- TODO: Notify user
-                                                ( up, down )
+                ( uploadUpdateTasks, downloadTasks ) =
+                    statuses
+                        |> List.foldl
+                            (\status ( up, down ) ->
+                                case status of
+                                    SyncDone ->
+                                        ( up, down )
 
-                                            NeedsUpload entry ->
-                                                ( uploadFile auth entry.id (Just entry.revision) entry.content :: up, down )
+                                    Conflict _ ->
+                                        -- TODO: Notify user
+                                        ( up, down )
 
-                                            NeedsDownload file ->
-                                                ( up, downloadFile auth file :: down )
+                                    NeedsUpload entry ->
+                                        ( uploadFile state entry.id (Just entry.revision) entry.content :: up, down )
+
+                                    NeedsDownload file ->
+                                        ( up, downloadFile state file :: down )
+                            )
+                            ( [], [] )
+
+                uploadTasks =
+                    uploadUpdateTasks
+                        ++ (localOnlyRecipes
+                                |> Db.toList
+                                |> List.map
+                                    (\( id, entry ) ->
+                                        uploadFile state id Nothing (extract.content entry)
                                     )
-                                    ( [], [] )
-
-                        uploadTasks =
-                            uploadUpdateTasks
-                                ++ (localOnlyRecipes
-                                        |> Db.toList
-                                        |> List.map
-                                            (\( id, entry ) ->
-                                                uploadFile auth id Nothing (extract.content entry)
-                                            )
-                                   )
-
-                        cmd =
-                            Cmd.batch
-                                [ Task.sequence uploadTasks |> Task.attempt msg.upload
-                                , Task.sequence downloadTasks |> Task.attempt msg.download
-                                ]
-                    in
-                    cmd
-
-                _ ->
-                    -- TODO: Ask for login
-                    Cmd.none
+                           )
+            in
+            Cmd.batch
+                [ Task.sequence uploadTasks |> Task.attempt Uploaded
+                , Task.sequence downloadTasks |> Task.attempt Downloaded
+                ]
 
         Err error ->
             -- TODO: Handle error
             Cmd.none
 
 
+uploadCmd : State -> Id a -> Revision -> String -> Cmd Msg
+uploadCmd state id revision content =
+    uploadFile state id (Revision.toString revision) content
+        |> Task.map List.singleton
+        |> Task.attempt Uploaded
+
+
 type alias UploadResult =
     Result Dropbox.UploadError (List Dropbox.FileMetadata)
 
 
-processUploads : UploadResult -> (Revision -> a -> a) -> Db a -> Db a
+processUploads : UploadResult -> (Revision -> a -> a) -> Db a -> List (Db.Row a)
 processUploads result updateRevision db =
     case result of
         Ok responses ->
             responses
-                |> List.foldl
-                    (\response recipes ->
+                |> List.filterMap
+                    (\response ->
                         let
                             id =
                                 idFromDropboxFileName response.name
                         in
-                        Db.update id
-                            (Maybe.map (updateRevision <| SyncedRevision response.rev))
-                            recipes
+                        Db.get db id
+                            -- TODO: Handle missing ids.
+                            |> Maybe.map
+                                (\item ->
+                                    let
+                                        revision =
+                                            SyncedRevision response.rev
+                                    in
+                                    ( id, updateRevision revision item )
+                                )
                     )
-                    db
 
         Err error ->
             -- TODO: Handle error
-            db
+            []
 
 
 type alias DownloadResult =
     Result Dropbox.DownloadError (List Dropbox.DownloadResponse)
 
 
-processDownloads : DownloadResult -> (String -> Revision -> Maybe a) -> Db a -> ( Db a, List (Maybe (Db.Row a)) )
+processDownloads : DownloadResult -> (String -> Revision -> Maybe a) -> Db a -> List (Db.Row a)
 processDownloads result parse db =
     case result of
         Ok responses ->
             let
                 newRecipeEntries =
                     responses
-                        |> List.map
+                        -- TODO: Handle failed creation of items from content.
+                        |> List.filterMap
                             (\response ->
                                 let
                                     id =
@@ -314,17 +373,18 @@ processDownloads result parse db =
                                         -- TODO: Notify about error
                                         Nothing
                             )
-
-                newRecipes =
-                    newRecipeEntries
-                        |> List.filterMap identity
-                        |> List.foldl (\row database -> Db.insert row database) db
             in
-            ( newRecipes, newRecipeEntries )
+            newRecipeEntries
 
         Err error ->
             -- TODO: Handle error
-            ( db, [] )
+            []
+
+
+deleteCmd : State -> Id a -> Revision -> Cmd Msg
+deleteCmd state id revision =
+    removeFile state id revision
+        |> Task.attempt Deleted
 
 
 type alias DeletedResult =
@@ -354,8 +414,8 @@ idFromDropboxFileName fileName =
         |> Id.fromString
 
 
-type SyncStatus a
-    = Synced
+type SyncUpdate a
+    = SyncDone
     | NeedsDownload (Id a)
     | NeedsUpload { id : Id a, revision : String, content : String }
     | Conflict (Id a)
@@ -365,21 +425,21 @@ type SyncStatus a
 -- API methods
 
 
-uploadFile : Dropbox.UserAuth -> Id a -> Maybe String -> String -> Task Dropbox.UploadError Dropbox.FileMetadata
-uploadFile auth id revision content =
+uploadFile : State -> Id a -> Maybe String -> String -> Task Dropbox.UploadError Dropbox.FileMetadata
+uploadFile state id maybeRevisionCode content =
     let
         fileName =
             Id.toString id
 
         mode =
-            case revision of
+            case maybeRevisionCode of
                 Just revisionCode ->
                     Dropbox.Update revisionCode
 
                 Nothing ->
                     Dropbox.Add
     in
-    Dropbox.upload auth
+    Dropbox.upload state.auth
         { path = "/recipes/" ++ fileName ++ ".recipe.txt"
         , mode = mode
         , autorename = False
@@ -389,22 +449,22 @@ uploadFile auth id revision content =
         }
 
 
-downloadFile : Dropbox.UserAuth -> Id a -> Task Dropbox.DownloadError Dropbox.DownloadResponse
-downloadFile auth id =
+downloadFile : State -> Id a -> Task Dropbox.DownloadError Dropbox.DownloadResponse
+downloadFile state id =
     let
         fileName =
             Id.toString id
     in
-    Dropbox.download auth { path = "/recipes/" ++ fileName ++ ".recipe.txt" }
+    Dropbox.download state.auth { path = "/recipes/" ++ fileName ++ ".recipe.txt" }
 
 
-removeFile : Dropbox.UserAuth -> Id a -> Revision -> Task Dropbox.DeleteError Dropbox.Metadata
-removeFile auth id revision =
+removeFile : State -> Id a -> Revision -> Task Dropbox.DeleteError Dropbox.Metadata
+removeFile state id revision =
     let
         fileName =
             Id.toString id
     in
-    Dropbox.delete auth
+    Dropbox.delete state.auth
         { path = "/recipes/" ++ fileName ++ ".recipe.txt"
         , parentRev = Revision.toString revision
         }
