@@ -7,12 +7,11 @@
   },
   "devDependencies": {
     "elm-live": "^4.0.2",
-    "terser": "^4.6.10"
+    "terser": "^4.8.0"
   },
   "scripts": {
     "test": "elm-test",
     "build": "elm make src/Main.elm --output dist/elm.min.js --optimize && terser dist/elm.min.js --output dist/elm.min.js --compress pure_funcs=[F2,F3,F4,F5,F6,F7,F8,F9,A2,A3,A4,A5,A6,A7,A8,A9],pure_getters,keep_fargs=false,unsafe_comps,unsafe --mangle",
-    "watch": "elm-live src/Main.elm --dir ./dist --start-page index.html -- --output dist/elm.min.js",
-    "debug": "elm-live src/Main.elm --dir ./dist --start-page index.html -- --output dist/elm.min.js --debug"
+    "watch": "elm-live src/Main.elm --dir ./dist --start-page index.html -- --output dist/elm.min.js"
   }
 }
