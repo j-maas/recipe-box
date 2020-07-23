@@ -7,11 +7,13 @@ import Store.PathComponent as PathComponent
 import Test exposing (..)
 
 
+charsetFuzzer : List Char -> Fuzz.Fuzzer String
 charsetFuzzer chars =
     Fuzz.list (Fuzz.oneOf (List.map Fuzz.constant chars))
         |> Fuzz.map String.fromList
 
 
+validChars : List Char
 validChars =
     [ 'A', 'B', 'C', 'X', 'Y', 'Z', 'a', 'b', 'c', 'x', 'y', 'z', ' ', '-', '(', ')', '_' ]
 
