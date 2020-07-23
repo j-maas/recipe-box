@@ -10,7 +10,6 @@ import Dropbox
 import DropboxSync
 import Embed.Youtube
 import Embed.Youtube.Attributes
-import FileName
 import Html.Styled as Html exposing (Html)
 import Html.Styled.Attributes as Attributes exposing (css)
 import Html.Styled.Events as Events
@@ -25,6 +24,7 @@ import Recipe exposing (Recipe)
 import RecipeParser
 import Revision exposing (Revision(..))
 import Set exposing (Set)
+import Store.PathComponent as PathComponent
 import Task
 import TypedUrl
 import Url exposing (Url)
@@ -297,7 +297,17 @@ update msg model =
                                     Recipe.title recipe
 
                                 id =
-                                    FileName.autorename title state.recipes
+                                    PathComponent.autorename title
+                                        (\idCandidate ->
+                                            case Db.get state.recipes (Id.fromString <| PathComponent.toString idCandidate) of
+                                                Just _ ->
+                                                    True
+
+                                                Nothing ->
+                                                    False
+                                        )
+                                        |> PathComponent.toString
+                                        |> Id.fromString
 
                                 revision =
                                     NewRevision
