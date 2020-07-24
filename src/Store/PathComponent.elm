@@ -10,7 +10,7 @@ type PathComponent
 
 fromString : String -> Maybe PathComponent
 fromString raw =
-    if String.all isSafeCharacter raw then
+    if String.all isSafeCharacter raw && not (String.isEmpty raw) then
         Just (PathComponent raw)
 
     else

@@ -21,6 +21,10 @@ suite =
                 PathComponent.autorename name (always False)
                     |> PathComponent.toString
                     |> Expect.equal name
+        , test "disallows empty strings" <|
+            \_ ->
+                PathComponent.fromString ""
+                    |> Expect.equal Nothing
         , fuzz (Fuzz.intRange 1 10) "counts on conflict" <|
             \conflicts ->
                 let

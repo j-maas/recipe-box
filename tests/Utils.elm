@@ -6,8 +6,12 @@ import Store.PathComponent as PathComponent exposing (PathComponent)
 
 pathComponentFuzzer : Fuzzer PathComponent
 pathComponentFuzzer =
-    charsetFuzzer safePathChars
-        |> Fuzz.map PathComponent.unsafe
+    Fuzz.map2
+        (\first rest ->
+            PathComponent.unsafe (String.cons first rest)
+        )
+        (Fuzz.oneOf (List.map Fuzz.constant safePathChars))
+        (charsetFuzzer safePathChars)
 
 
 charsetFuzzer : List Char -> Fuzz.Fuzzer String
