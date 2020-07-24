@@ -1,4 +1,4 @@
-module Store.PathComponent exposing (PathComponent, autorename, safeString, toString, unsafeString)
+module Store.PathComponent exposing (PathComponent, autorename, fromString, toString, unsafe)
 
 import Set exposing (Set)
 import String.Extra as String
@@ -8,8 +8,8 @@ type PathComponent
     = PathComponent String
 
 
-safeString : String -> Maybe PathComponent
-safeString raw =
+fromString : String -> Maybe PathComponent
+fromString raw =
     if String.all isSafeCharacter raw then
         Just (PathComponent raw)
 
@@ -22,8 +22,8 @@ toString (PathComponent raw) =
     raw
 
 
-unsafeString : String -> PathComponent
-unsafeString raw =
+unsafe : String -> PathComponent
+unsafe raw =
     PathComponent raw
 
 

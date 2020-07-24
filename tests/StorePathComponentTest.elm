@@ -5,23 +5,18 @@ import Expect
 import Fuzz
 import Store.PathComponent as PathComponent
 import Test exposing (..)
-
-
-charsetFuzzer : List Char -> Fuzz.Fuzzer String
-charsetFuzzer chars =
-    Fuzz.list (Fuzz.oneOf (List.map Fuzz.constant chars))
-        |> Fuzz.map String.fromList
-
-
-validChars : List Char
-validChars =
-    [ 'A', 'B', 'C', 'X', 'Y', 'Z', 'a', 'b', 'c', 'x', 'y', 'z', ' ', '-', '(', ')', '_' ]
+import Utils exposing (charsetFuzzer, pathComponentFuzzer, safePathChars)
 
 
 suite : Test
 suite =
     describe "path component"
-        [ fuzz (charsetFuzzer validChars) "allows valid characters" <|
+        [ fuzz pathComponentFuzzer "converts to string and from string without change" <|
+            \name ->
+                PathComponent.toString name
+                    |> PathComponent.fromString
+                    |> Expect.equal (Just name)
+        , fuzz (charsetFuzzer safePathChars) "allows valid characters" <|
             \name ->
                 PathComponent.autorename name (always False)
                     |> PathComponent.toString
