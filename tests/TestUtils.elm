@@ -1,16 +1,21 @@
-module Utils exposing (charsetFuzzer, pathComponentFuzzer, safePathChars)
+module TestUtils exposing (charsetFuzzer, pathComponentFuzzer, safePathChars)
 
+import Array
 import Fuzz exposing (Fuzzer)
 import Store.PathComponent as PathComponent exposing (PathComponent)
 
 
 pathComponentFuzzer : Fuzzer PathComponent
 pathComponentFuzzer =
+    let
+        validChars =
+            Array.fromList safePathChars
+    in
     Fuzz.map2
         (\first rest ->
             PathComponent.unsafe (String.cons first rest)
         )
-        (Fuzz.oneOf (List.map Fuzz.constant safePathChars))
+        (Fuzz.intRange 0 (Array.length validChars - 1) |> Fuzz.map (\index -> Array.get index validChars |> Maybe.withDefault 'x'))
         (charsetFuzzer safePathChars)
 
 

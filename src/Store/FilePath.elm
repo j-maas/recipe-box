@@ -1,17 +1,19 @@
-module Store.Path exposing (Path, from, fromString, toString)
+module Store.FilePath exposing (FilePath, from, fromString, toString)
 
 import List.Extra as List
+import Store.FolderPath as FolderPath exposing (FolderPath)
 import Store.PathComponent as PathComponent exposing (PathComponent)
+import Utils
 
 
-type alias Path =
-    { folder : List PathComponent
+type alias FilePath =
+    { folder : FolderPath
     , name : PathComponent
     , extension : ( PathComponent, List PathComponent )
     }
 
 
-fromString : String -> Maybe Path
+fromString : String -> Maybe FilePath
 fromString raw =
     String.split "/" raw
         |> List.unconsLast
@@ -26,9 +28,9 @@ fromString raw =
             )
 
 
-from : { folder : List String, name : String, extension : ( String, List String ) } -> Maybe Path
+from : { folder : List String, name : String, extension : ( String, List String ) } -> Maybe FilePath
 from rawPath =
-    mapMaybes PathComponent.fromString rawPath.folder
+    FolderPath.fromList rawPath.folder
         |> Maybe.map (\folder -> { folder = folder })
         |> Maybe.andThen
             (\path ->
@@ -46,36 +48,18 @@ from rawPath =
                         { folder = path.folder, name = path.name, extension = ( extension, extensionRest ) }
                     )
                     (PathComponent.fromString rawExtension)
-                    (mapMaybes PathComponent.fromString rawExtensionRest)
+                    (Utils.mapMaybes PathComponent.fromString rawExtensionRest)
             )
 
 
-mapMaybes : (a -> Maybe b) -> List a -> Maybe (List b)
-mapMaybes mapping list =
-    List.foldr
-        (\a accu ->
-            accu
-                |> Maybe.andThen
-                    (\previous ->
-                        mapping a
-                            |> Maybe.map
-                                (\b ->
-                                    b :: previous
-                                )
-                    )
-        )
-        (Just [])
-        list
-
-
-toString : Path -> String
+toString : FilePath -> String
 toString path =
     let
         ( extension, extensionRest ) =
             path.extension
     in
     -- Ensure a trailing slash, if there are folder components.
-    String.join "/" (List.map PathComponent.toString path.folder ++ [ "" ])
+    FolderPath.toString path.folder
         ++ PathComponent.toString path.name
         -- Ensure a leading dot.
         ++ String.join "." ("" :: List.map PathComponent.toString (extension :: extensionRest))

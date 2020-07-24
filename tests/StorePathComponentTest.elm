@@ -5,7 +5,7 @@ import Expect
 import Fuzz
 import Store.PathComponent as PathComponent
 import Test exposing (..)
-import Utils exposing (charsetFuzzer, pathComponentFuzzer, safePathChars)
+import TestUtils exposing (charsetFuzzer, pathComponentFuzzer, safePathChars)
 
 
 suite : Test

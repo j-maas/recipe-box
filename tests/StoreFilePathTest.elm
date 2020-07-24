@@ -1,10 +1,10 @@
-module StorePathTest exposing (suite)
+module StoreFilePathTest exposing (suite)
 
 import Expect
 import Fuzz exposing (Fuzzer)
-import Store.Path as Path exposing (Path)
+import Store.FilePath as Path exposing (FilePath)
 import Test exposing (..)
-import Utils exposing (pathComponentFuzzer)
+import TestUtils exposing (pathComponentFuzzer)
 
 
 suite : Test
@@ -27,7 +27,7 @@ suite =
         ]
 
 
-pathFuzzer : Fuzzer Path
+pathFuzzer : Fuzzer FilePath
 pathFuzzer =
     Fuzz.map4
         (\folder name extension extensionRest ->
