@@ -1,4 +1,4 @@
-module Store.FilePath exposing (FilePath, from, fromString, toString)
+module Store.FilePath exposing (FilePath, from, fromString, nameToString, toString)
 
 import List.Extra as List
 import Store.FolderPath as FolderPath exposing (FolderPath)
@@ -54,12 +54,17 @@ from rawPath =
 
 toString : FilePath -> String
 toString path =
+    -- Ensure a trailing slash, if there are folder components.
+    FolderPath.toString path.folder
+        ++ nameToString path
+
+
+nameToString : FilePath -> String
+nameToString path =
     let
         ( extension, extensionRest ) =
             path.extension
     in
-    -- Ensure a trailing slash, if there are folder components.
-    FolderPath.toString path.folder
-        ++ PathComponent.toString path.name
+    PathComponent.toString path.name
         -- Ensure a leading dot.
         ++ String.join "." ("" :: List.map PathComponent.toString (extension :: extensionRest))

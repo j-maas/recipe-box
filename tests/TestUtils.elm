@@ -1,8 +1,24 @@
-module TestUtils exposing (charsetFuzzer, pathComponentFuzzer, safePathChars)
+module TestUtils exposing (charsetFuzzer, filePathFuzzer, pathComponentFuzzer, safePathChars)
 
 import Array
 import Fuzz exposing (Fuzzer)
+import Store.FilePath exposing (FilePath)
 import Store.PathComponent as PathComponent exposing (PathComponent)
+
+
+filePathFuzzer : Fuzzer FilePath
+filePathFuzzer =
+    Fuzz.map4
+        (\folder name extension extensionRest ->
+            { folder = folder
+            , name = name
+            , extension = ( extension, extensionRest )
+            }
+        )
+        (Fuzz.list pathComponentFuzzer)
+        pathComponentFuzzer
+        pathComponentFuzzer
+        (Fuzz.list pathComponentFuzzer)
 
 
 pathComponentFuzzer : Fuzzer PathComponent
