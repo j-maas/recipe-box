@@ -45,7 +45,7 @@ insert path item (Store (Folder folder)) =
         [] ->
             let
                 key =
-                    FilePath.nameToString path
+                    PathComponent.toString path.name
             in
             Store (Folder { folder | contents = Dict.insert key item folder.contents })
 
@@ -73,7 +73,7 @@ read : FilePath -> Store item -> Maybe item
 read path (Store (Folder folder)) =
     case path.folder of
         [] ->
-            Dict.get (FilePath.nameToString path) folder.contents
+            Dict.get (PathComponent.toString path.name) folder.contents
 
         child :: rest ->
             Dict.get (PathComponent.toString child) folder.children

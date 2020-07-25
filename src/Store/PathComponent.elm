@@ -89,4 +89,4 @@ replacements =
 charWhitelist : Set Char
 charWhitelist =
     Set.fromList
-        [ ' ', '-', '(', ')', '_' ]
+        [ ' ', '-', '(', ')', '_', '.' ]

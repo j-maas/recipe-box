@@ -29,7 +29,7 @@ suite =
                         (\( name, item ) store ->
                             let
                                 path =
-                                    { folder = folder, name = name, extension = ( PathComponent.unsafe ".txt", [] ) }
+                                    { folder = folder, name = name }
                             in
                             Store.insert path item store
                         )

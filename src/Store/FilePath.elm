@@ -1,4 +1,4 @@
-module Store.FilePath exposing (FilePath, from, fromString, nameToString, toString)
+module Store.FilePath exposing (FilePath, from, fromString, toString)
 
 import List.Extra as List
 import Store.FolderPath as FolderPath exposing (FolderPath)
@@ -9,7 +9,6 @@ import Utils
 type alias FilePath =
     { folder : FolderPath
     , name : PathComponent
-    , extension : ( PathComponent, List PathComponent )
     }
 
 
@@ -19,16 +18,11 @@ fromString raw =
         |> List.unconsLast
         |> Maybe.andThen
             (\( last, folder ) ->
-                case String.split "." last of
-                    name :: extension :: extensionRest ->
-                        from { folder = folder, name = name, extension = ( extension, extensionRest ) }
-
-                    _ ->
-                        Nothing
+                from { folder = folder, name = last }
             )
 
 
-from : { folder : List String, name : String, extension : ( String, List String ) } -> Maybe FilePath
+from : { folder : List String, name : String } -> Maybe FilePath
 from rawPath =
     FolderPath.fromList rawPath.folder
         |> Maybe.map (\folder -> { folder = folder })
@@ -37,34 +31,10 @@ from rawPath =
                 PathComponent.fromString rawPath.name
                     |> Maybe.map (\name -> { folder = path.folder, name = name })
             )
-        |> Maybe.andThen
-            (\path ->
-                let
-                    ( rawExtension, rawExtensionRest ) =
-                        rawPath.extension
-                in
-                Maybe.map2
-                    (\extension extensionRest ->
-                        { folder = path.folder, name = path.name, extension = ( extension, extensionRest ) }
-                    )
-                    (PathComponent.fromString rawExtension)
-                    (Utils.mapMaybes PathComponent.fromString rawExtensionRest)
-            )
 
 
 toString : FilePath -> String
 toString path =
     -- Ensure a trailing slash, if there are folder components.
     FolderPath.toString path.folder
-        ++ nameToString path
-
-
-nameToString : FilePath -> String
-nameToString path =
-    let
-        ( extension, extensionRest ) =
-            path.extension
-    in
-    PathComponent.toString path.name
-        -- Ensure a leading dot.
-        ++ String.join "." ("" :: List.map PathComponent.toString (extension :: extensionRest))
+        ++ PathComponent.toString path.name

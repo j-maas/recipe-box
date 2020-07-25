@@ -41,7 +41,7 @@ suite =
                     |> Expect.equal ("conflict" ++ String.fromInt (conflicts + 1))
         , test "removes special characters" <|
             \_ ->
-                PathComponent.autorename "remove. these/" (always False)
+                PathComponent.autorename "remove/ these!" (always False)
                     |> PathComponent.toString
                     |> Expect.equal "remove these"
         , test "replaces Umlaute" <|

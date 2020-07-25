@@ -8,17 +8,14 @@ import Store.PathComponent as PathComponent exposing (PathComponent)
 
 filePathFuzzer : Fuzzer FilePath
 filePathFuzzer =
-    Fuzz.map4
-        (\folder name extension extensionRest ->
+    Fuzz.map2
+        (\folder name ->
             { folder = folder
             , name = name
-            , extension = ( extension, extensionRest )
             }
         )
         (Fuzz.list pathComponentFuzzer)
         pathComponentFuzzer
-        pathComponentFuzzer
-        (Fuzz.list pathComponentFuzzer)
 
 
 pathComponentFuzzer : Fuzzer PathComponent
@@ -31,7 +28,17 @@ pathComponentFuzzer =
         (\first rest ->
             PathComponent.unsafe (String.cons first rest)
         )
-        (Fuzz.intRange 0 (Array.length validChars - 1) |> Fuzz.map (\index -> Array.get index validChars |> Maybe.withDefault 'x'))
+        (Fuzz.intRange 0 (Array.length validChars - 1)
+            |> Fuzz.map
+                (\index ->
+                    case Array.get index validChars of
+                        Just c ->
+                            c
+
+                        Nothing ->
+                            Debug.todo "Invalid index"
+                )
+        )
         (charsetFuzzer safePathChars)
 
 
@@ -43,4 +50,4 @@ charsetFuzzer chars =
 
 safePathChars : List Char
 safePathChars =
-    [ 'A', 'B', 'C', 'X', 'Y', 'Z', 'a', 'b', 'c', 'x', 'y', 'z', ' ', '-', '(', ')', '_' ]
+    [ 'A', 'B', 'C', 'X', 'Y', 'Z', 'a', 'b', 'c', 'x', 'y', 'z', ' ', '-', '(', ')', '_', '.' ]

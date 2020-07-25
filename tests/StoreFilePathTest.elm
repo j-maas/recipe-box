@@ -13,8 +13,7 @@ suite =
             \_ ->
                 Path.from
                     { folder = [ "i", "am", "a" ]
-                    , name = "file"
-                    , extension = ( "with", [ "extension" ] )
+                    , name = "file.with.extension"
                     }
                     |> Maybe.map Path.toString
                     |> Expect.equal (Just "i/am/a/file.with.extension")
