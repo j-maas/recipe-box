@@ -6,7 +6,7 @@ import Store.FilePath as FilePath
 import Store.PathComponent as PathComponent
 import Store.Store as Store
 import Test exposing (..)
-import TestUtils exposing (filePathFuzzer)
+import TestUtils exposing (filePathFuzzer, pathComponentFuzzer)
 
 
 suite : Test
@@ -22,4 +22,19 @@ suite =
                     |> Store.insert filePath item
                     |> Store.read filePath
                     |> Expect.equal (Just item)
+        , fuzz2 (Fuzz.list pathComponentFuzzer) (Fuzz.list Fuzz.int) "inserts multiple and reads them all" <|
+            \folder items ->
+                List.indexedMap (\index item -> ( PathComponent.unsafe <| String.fromInt index, item )) items
+                    |> List.foldl
+                        (\( name, item ) store ->
+                            let
+                                path =
+                                    { folder = folder, name = name, extension = ( PathComponent.unsafe ".txt", [] ) }
+                            in
+                            Store.insert path item store
+                        )
+                        Store.empty
+                    |> Store.list folder
+                    |> List.sort
+                    |> Expect.equal (List.sort items)
         ]

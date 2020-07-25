@@ -1,4 +1,4 @@
-module Store.Store exposing (FilePath, FolderPath, Store, empty, insert, read)
+module Store.Store exposing (FilePath, FolderPath, Store, empty, insert, list, read)
 
 import Dict exposing (Dict)
 import Store.FilePath as FilePath
@@ -81,3 +81,18 @@ read path (Store (Folder folder)) =
                     (\subFolder ->
                         read { path | folder = rest } (Store subFolder)
                     )
+
+
+list : FolderPath -> Store item -> List item
+list path (Store (Folder folder)) =
+    case path of
+        [] ->
+            Dict.values folder.contents
+
+        child :: rest ->
+            Dict.get (PathComponent.toString child) folder.children
+                |> Maybe.map
+                    (\subFolder ->
+                        list rest (Store subFolder)
+                    )
+                |> Maybe.withDefault []
