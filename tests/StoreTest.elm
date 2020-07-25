@@ -2,7 +2,6 @@ module StoreTest exposing (suite)
 
 import Expect
 import Fuzz
-import Store.FilePath as FilePath
 import Store.PathComponent as PathComponent
 import Store.Store as Store
 import Test exposing (..)
@@ -37,4 +36,11 @@ suite =
                     |> Store.list folder
                     |> List.sort
                     |> Expect.equal (List.sort items)
+        , fuzz3 filePathFuzzer Fuzz.int Fuzz.int "updates existing item" <|
+            \path firstItem secondItem ->
+                Store.empty
+                    |> Store.insert path firstItem
+                    |> Store.update path (Maybe.map ((+) secondItem))
+                    |> Store.read path
+                    |> Expect.equal (Just <| firstItem + secondItem)
         ]

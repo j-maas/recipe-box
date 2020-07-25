@@ -1,9 +1,9 @@
-module Store.Store exposing (FilePath, FolderPath, Store, empty, insert, list, read)
+module Store.Store exposing (FilePath, FolderPath, Store, empty, insert, list, read, update)
 
 import Dict exposing (Dict)
 import Store.FilePath as FilePath
 import Store.FolderPath as FolderPath
-import Store.PathComponent as PathComponent exposing (PathComponent)
+import Store.PathComponent as PathComponent
 
 
 type alias FilePath =
@@ -96,3 +96,31 @@ list path (Store (Folder folder)) =
                         list rest (Store subFolder)
                     )
                 |> Maybe.withDefault []
+
+
+update : FilePath -> (Maybe item -> Maybe item) -> Store item -> Store item
+update path f (Store (Folder folder)) =
+    case path.folder of
+        [] ->
+            let
+                newContents =
+                    Dict.update (PathComponent.toString path.name) f folder.contents
+            in
+            Store (Folder { folder | contents = newContents })
+
+        child :: rest ->
+            Store
+                (Folder
+                    { folder
+                        | children =
+                            Dict.update (PathComponent.toString child)
+                                (Maybe.map
+                                    (\subFolder ->
+                                        case update { path | folder = rest } f (Store subFolder) of
+                                            Store newFolder ->
+                                                newFolder
+                                    )
+                                )
+                                folder.children
+                    }
+                )
