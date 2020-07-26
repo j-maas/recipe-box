@@ -1,4 +1,4 @@
-module Store.Store exposing (FilePath, FolderPath, Store, delete, empty, insert, insertList, list, read, update)
+module Store.Store exposing (FilePath, FolderPath, Store, delete, empty, insert, insertList, list, read, subfolders, update)
 
 import Dict exposing (Dict)
 import Store.FilePath as FilePath
@@ -119,6 +119,25 @@ listRec fullFolderPath currentPath (Store (Folder folder)) =
                 |> Maybe.map
                     (\subFolder ->
                         listRec fullFolderPath rest (Store subFolder)
+                    )
+                |> Maybe.withDefault []
+
+
+subfolders : FolderPath -> Store item -> List FolderPath
+subfolders path (Store (Folder folder)) =
+    case path of
+        [] ->
+            Dict.keys folder.children
+                -- This is ok because only valid folder paths are inserted into the dict.
+                |> List.map PathComponent.unsafe
+                |> List.map List.singleton
+
+        child :: rest ->
+            Dict.get (PathComponent.toString child) folder.children
+                |> Maybe.map
+                    (\subFolder ->
+                        subfolders rest (Store subFolder)
+                            |> List.map (\subpath -> child :: subpath)
                     )
                 |> Maybe.withDefault []
 

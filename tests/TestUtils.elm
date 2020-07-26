@@ -1,8 +1,9 @@
-module TestUtils exposing (charsetFuzzer, filePathFuzzer, pathComponentFuzzer, safePathChars)
+module TestUtils exposing (buildFolderPath, buildPathComponent, charsetFuzzer, filePathFuzzer, pathComponentFuzzer, safePathChars)
 
 import Array
 import Fuzz exposing (Fuzzer)
 import Store.FilePath exposing (FilePath)
+import Store.FolderPath as FolderPath exposing (FolderPath)
 import Store.PathComponent as PathComponent exposing (PathComponent)
 
 
@@ -51,3 +52,23 @@ charsetFuzzer chars =
 safePathChars : List Char
 safePathChars =
     [ 'A', 'B', 'C', 'X', 'Y', 'Z', 'a', 'b', 'c', 'x', 'y', 'z', ' ', '-', '(', ')', '_', '.' ]
+
+
+buildPathComponent : String -> PathComponent
+buildPathComponent raw =
+    case PathComponent.fromString raw of
+        Just p ->
+            p
+
+        Nothing ->
+            Debug.todo "Invalid path component"
+
+
+buildFolderPath : List String -> FolderPath
+buildFolderPath raw =
+    case FolderPath.fromList raw of
+        Just f ->
+            f
+
+        Nothing ->
+            Debug.todo "Invalid folder path"
