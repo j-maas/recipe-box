@@ -52,7 +52,7 @@ suite =
                     |> Store.insertList Store.empty
                     |> Store.list folder
                     |> sort
-                    |> Expect.equal (sort entries)
+                    |> Expect.equalLists (sort entries)
         , fuzz3 filePathFuzzer Fuzz.int Fuzz.int "updates existing item" <|
             \path firstItem secondItem ->
                 Store.empty
