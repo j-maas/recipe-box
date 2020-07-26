@@ -1,4 +1,4 @@
-module DropboxSync exposing (DeletedResult, DownloadResult, FetchResult, LoginError(..), State, UploadResult, Msg, update, decodeState, deleteCmd, encodeState, loginCmd, logoutCmd, parseLoginUrl, syncCmd, uploadCmd)
+module DropboxSync exposing (DeletedResult, DownloadResult, FetchResult, LoginError(..), Msg, State, UploadResult, decodeState, deleteCmd, encodeState, loginCmd, logoutCmd, parseLoginUrl, syncCmd, update, uploadCmd)
 
 import Db exposing (Db)
 import Dropbox
@@ -7,6 +7,7 @@ import Id exposing (Id)
 import Json.Decode as Decode exposing (Decoder)
 import Json.Encode as Encode
 import Revision exposing (Revision(..))
+import Store.FilePath as FilePath exposing (FilePath)
 import Task exposing (Task)
 import Url exposing (Url)
 
@@ -223,14 +224,14 @@ processFetched result db state extract =
                         |> List.foldl
                             (\( fileName, revision ) ( stats, database ) ->
                                 let
-                                    id =
+                                    name =
                                         idFromDropboxFileName fileName
 
                                     item =
-                                        Db.get database id
+                                        Db.get database (Id.fromString name)
 
                                     newRecipes =
-                                        Db.remove id database
+                                        Db.remove (Id.fromString name) database
 
                                     newStatus =
                                         item
@@ -242,24 +243,24 @@ processFetched result db state extract =
                                                                 SyncDone
 
                                                             else
-                                                                NeedsDownload id
+                                                                NeedsDownload name
 
                                                         ChangedRevision revisionCode ->
                                                             if revisionCode == revision then
                                                                 NeedsUpload
-                                                                    { id = id
+                                                                    { name = name
                                                                     , revision = revisionCode
                                                                     , content = extract.content entry
                                                                     }
 
                                                             else
-                                                                Conflict id
+                                                                Conflict name
 
                                                         NewRevision ->
                                                             -- The file already exists on the remote.
-                                                            Conflict id
+                                                            Conflict name
                                                 )
-                                            |> Maybe.withDefault (NeedsDownload id)
+                                            |> Maybe.withDefault (NeedsDownload name)
                                 in
                                 ( newStatus :: stats, newRecipes )
                             )
@@ -278,7 +279,7 @@ processFetched result db state extract =
                                         ( up, down )
 
                                     NeedsUpload entry ->
-                                        ( uploadFile state entry.id (Just entry.revision) entry.content :: up, down )
+                                        ( uploadFile state entry.name (Just entry.revision) entry.content :: up, down )
 
                                     NeedsDownload file ->
                                         ( up, downloadFile state file :: down )
@@ -291,7 +292,7 @@ processFetched result db state extract =
                                 |> Db.toList
                                 |> List.map
                                     (\( id, entry ) ->
-                                        uploadFile state id Nothing (extract.content entry)
+                                        uploadFile state (Id.toString id) Nothing (extract.content entry)
                                     )
                            )
             in
@@ -305,9 +306,9 @@ processFetched result db state extract =
             Cmd.none
 
 
-uploadCmd : State -> Id a -> Revision -> String -> Cmd Msg
-uploadCmd state id revision content =
-    uploadFile state id (Revision.toString revision) content
+uploadCmd : State -> String -> Revision -> String -> Cmd Msg
+uploadCmd state fileName revision content =
+    uploadFile state fileName (Revision.toString revision) content
         |> Task.map List.singleton
         |> Task.attempt Uploaded
 
@@ -325,7 +326,7 @@ processUploads result updateRevision db =
                     (\response ->
                         let
                             id =
-                                idFromDropboxFileName response.name
+                                Id.fromString (idFromDropboxFileName response.name)
                         in
                         Db.get db id
                             -- TODO: Handle missing ids.
@@ -360,7 +361,7 @@ processDownloads result parse db =
                             (\response ->
                                 let
                                     id =
-                                        idFromDropboxFileName response.name
+                                        Id.fromString (idFromDropboxFileName response.name)
                                 in
                                 case parse response.content (SyncedRevision response.rev) of
                                     Just item ->
@@ -381,9 +382,9 @@ processDownloads result parse db =
             []
 
 
-deleteCmd : State -> Id a -> Revision -> Cmd Msg
-deleteCmd state id revision =
-    removeFile state id revision
+deleteCmd : State -> String -> Revision -> Cmd Msg
+deleteCmd state fileName revision =
+    removeFile state fileName revision
         |> Task.attempt Deleted
 
 
@@ -407,30 +408,26 @@ processDeleted result =
             False
 
 
-idFromDropboxFileName : String -> Id a
+idFromDropboxFileName : String -> String
 idFromDropboxFileName fileName =
     -- Remove .recipe.txt ending
     String.dropRight 11 fileName
-        |> Id.fromString
 
 
 type SyncUpdate a
     = SyncDone
-    | NeedsDownload (Id a)
-    | NeedsUpload { id : Id a, revision : String, content : String }
-    | Conflict (Id a)
+    | NeedsDownload String
+    | NeedsUpload { name : String, revision : String, content : String }
+    | Conflict String
 
 
 
 -- API methods
 
 
-uploadFile : State -> Id a -> Maybe String -> String -> Task Dropbox.UploadError Dropbox.FileMetadata
-uploadFile state id maybeRevisionCode content =
+uploadFile : State -> String -> Maybe String -> String -> Task Dropbox.UploadError Dropbox.FileMetadata
+uploadFile state fileName maybeRevisionCode content =
     let
-        fileName =
-            Id.toString id
-
         mode =
             case maybeRevisionCode of
                 Just revisionCode ->
@@ -449,21 +446,13 @@ uploadFile state id maybeRevisionCode content =
         }
 
 
-downloadFile : State -> Id a -> Task Dropbox.DownloadError Dropbox.DownloadResponse
-downloadFile state id =
-    let
-        fileName =
-            Id.toString id
-    in
+downloadFile : State -> String -> Task Dropbox.DownloadError Dropbox.DownloadResponse
+downloadFile state fileName =
     Dropbox.download state.auth { path = "/recipes/" ++ fileName ++ ".recipe.txt" }
 
 
-removeFile : State -> Id a -> Revision -> Task Dropbox.DeleteError Dropbox.Metadata
-removeFile state id revision =
-    let
-        fileName =
-            Id.toString id
-    in
+removeFile : State -> String -> Revision -> Task Dropbox.DeleteError Dropbox.Metadata
+removeFile state fileName revision =
     Dropbox.delete state.auth
         { path = "/recipes/" ++ fileName ++ ".recipe.txt"
         , parentRev = Revision.toString revision

@@ -5,9 +5,7 @@ import Browser.Navigation as Navigation
 import Css exposing (auto, num, pct, rem, zero)
 import Css.Global as Global
 import Db exposing (Db)
-import Dict
-import Dropbox
-import DropboxSync
+import Dict exposing (Dict)
 import Embed.Youtube
 import Embed.Youtube.Attributes
 import Html.Styled as Html exposing (Html)
@@ -24,8 +22,10 @@ import Recipe exposing (Recipe)
 import RecipeParser
 import Revision exposing (Revision(..))
 import Set exposing (Set)
+import Store.FilePath as FilePath exposing (FilePath)
+import Store.FolderPath exposing (FolderPath)
 import Store.PathComponent as PathComponent
-import Task
+import Store.Store as Store exposing (Store)
 import TypedUrl
 import Url exposing (Url)
 
@@ -60,17 +60,17 @@ type alias State =
     , wakeVideoId : String
     , dropbox :
         { nonce : Maybe String
-        , state : Maybe DropboxSync.State
+        , state : Maybe ()
         }
     }
 
 
 type alias RecipeStore =
-    Db RecipeEntry
+    Store RecipeEntry
 
 
 type alias RecipeId =
-    Id RecipeEntry
+    Store.FilePath
 
 
 type alias RecipeEntry =
@@ -82,7 +82,7 @@ type alias RecipeEntry =
 
 
 type alias ShoppingList =
-    { selectedRecipes : Set String
+    { selectedRecipes : Dict String FilePath
     , checked : Set String
     }
 
@@ -97,7 +97,8 @@ type Screen
 
 
 type alias EditState =
-    { code : String
+    { maybeFilePath : Maybe FilePath
+    , code : String
     , failure : Maybe RecipeParser.Failure
     }
 
@@ -139,27 +140,36 @@ init flags url key =
                     (\entry ->
                         RecipeParser.parse entry.code
                             |> Result.toMaybe
-                            |> Maybe.map
+                            |> Maybe.andThen
                                 (\recipe ->
-                                    ( Id.fromString entry.fileName
-                                    , { recipe = recipe
-                                      , code = entry.code
-                                      , checks = Set.fromList entry.checks
-                                      , revision =
-                                            entry.revision
-                                                |> Maybe.map SyncedRevision
-                                                |> Maybe.withDefault NewRevision
-                                      }
-                                    )
+                                    FilePath.from
+                                        { folder = List.map PathComponent.toString recipesFolder
+                                        , name = entry.fileName
+                                        }
+                                        |> Maybe.map
+                                            (\path ->
+                                                ( path
+                                                , { recipe = recipe
+                                                  , code = entry.code
+                                                  , checks = Set.fromList entry.checks
+                                                  , revision =
+                                                        entry.revision
+                                                            |> Maybe.map SyncedRevision
+                                                            |> Maybe.withDefault NewRevision
+                                                  }
+                                                )
+                                            )
                                 )
                     )
-                |> Db.fromList
+                |> Store.insertList Store.empty
 
         shoppingList =
             { selectedRecipes =
                 flags.shoppingList.selectedRecipes
+                    |> dictFromRecipeNames
+            , checked =
+                flags.shoppingList.checked
                     |> Set.fromList
-            , checked = flags.shoppingList.checked |> Set.fromList
             }
 
         settings =
@@ -169,25 +179,9 @@ init flags url key =
                     , dropbox = Nothing
                     }
 
-        ( maybeDropboxState, dropboxCmd ) =
-            settings.dropbox
-                |> Maybe.andThen
-                    (\raw ->
-                        Decode.decodeValue DropboxSync.decodeState raw
-                            |> Result.toMaybe
-                            |> Maybe.map
-                                (\dropboxState ->
-                                    ( Just dropboxState
-                                    , DropboxSync.syncCmd dropboxState
-                                        |> Cmd.map DropboxMsg
-                                    )
-                                )
-                    )
-                |> Maybe.withDefault ( Nothing, Cmd.none )
-
         dropbox =
             { nonce = flags.nonce
-            , state = maybeDropboxState
+            , state = Nothing
             }
 
         state =
@@ -205,8 +199,24 @@ init flags url key =
       , language = Language.fromString flags.language
       , screen = screen
       }
-    , Cmd.batch [ cmd, dropboxCmd ]
+    , Cmd.batch [ cmd ]
     )
+
+
+dictFromRecipeNames : List String -> Dict String FilePath
+dictFromRecipeNames names =
+    names
+        |> List.filterMap
+            (\rawName ->
+                PathComponent.fromString rawName
+                    |> Maybe.map (\name -> ( rawName, { folder = recipesFolder, name = name } ))
+            )
+        |> Dict.fromList
+
+
+recipesFolder : FolderPath
+recipesFolder =
+    [ PathComponent.unsafe "recipes" ]
 
 
 type Msg
@@ -227,7 +237,6 @@ type Msg
     | Logout
     | LoggedOut (Result Http.Error ())
     | NonceGenerated String
-    | DropboxMsg DropboxSync.Msg
     | UrlChanged Url
     | LinkClicked Browser.UrlRequest
 
@@ -239,32 +248,16 @@ update msg model =
             Navigation.pushUrl model.key (stringFromRoute route)
     in
     case msg of
-        DeleteRecipe id ->
+        DeleteRecipe filePath ->
             let
                 state =
                     model.state
-
-                removeFileCmd =
-                    case state.dropbox.state of
-                        Just dropbox ->
-                            let
-                                revision =
-                                    Db.get state.recipes id
-                                        |> Maybe.map .revision
-                                        |> Maybe.withDefault NewRevision
-                            in
-                            DropboxSync.deleteCmd dropbox id revision
-                                |> Cmd.map DropboxMsg
-
-                        _ ->
-                            Cmd.none
             in
             ( { model
-                | state = { state | recipes = Db.remove id state.recipes }
+                | state = { state | recipes = Store.delete filePath state.recipes }
               }
             , Cmd.batch
-                [ removeRecipeCmd id
-                , removeFileCmd
+                [ removeRecipeCmd filePath
                 , goTo OverviewRoute
                 ]
             )
@@ -273,11 +266,11 @@ update msg model =
             let
                 newScreen =
                     case model.screen of
-                        New _ ->
-                            New { code = code, failure = Nothing }
+                        New state ->
+                            New { state | code = code, failure = Nothing }
 
-                        Edit _ ->
-                            Edit { code = code, failure = Nothing }
+                        Edit state ->
+                            Edit { state | code = code, failure = Nothing }
 
                         _ ->
                             model.screen
@@ -286,7 +279,7 @@ update msg model =
 
         Add ->
             case model.screen of
-                New { code } ->
+                New { maybeFilePath, code } ->
                     case RecipeParser.parse code of
                         Ok recipe ->
                             let
@@ -296,50 +289,40 @@ update msg model =
                                 title =
                                     Recipe.title recipe
 
-                                id =
+                                fileName =
                                     PathComponent.autorename title
                                         (\idCandidate ->
-                                            case Db.get state.recipes (Id.fromString <| PathComponent.toString idCandidate) of
+                                            case Store.read { folder = recipesFolder, name = idCandidate } state.recipes of
                                                 Just _ ->
                                                     True
 
                                                 Nothing ->
                                                     False
                                         )
-                                        |> PathComponent.toString
-                                        |> Id.fromString
+
+                                filePath =
+                                    { folder = recipesFolder, name = fileName }
 
                                 revision =
                                     NewRevision
-
-                                uploadCmd =
-                                    case state.dropbox.state of
-                                        Just dropbox ->
-                                            DropboxSync.uploadCmd dropbox id revision code
-                                                |> Cmd.map DropboxMsg
-
-                                        _ ->
-                                            Cmd.none
                             in
                             ( { model
                                 | state =
                                     { state
                                         | recipes =
-                                            Db.insert
-                                                ( id
-                                                , { recipe = recipe
-                                                  , code = code
-                                                  , checks = Set.empty
-                                                  , revision = revision
-                                                  }
-                                                )
+                                            Store.insert
+                                                filePath
+                                                { recipe = recipe
+                                                , code = code
+                                                , checks = Set.empty
+                                                , revision = revision
+                                                }
                                                 state.recipes
                                     }
                               }
                             , Cmd.batch
-                                [ saveRecipeCmd { id = id, code = code, revision = revision }
-                                , uploadCmd
-                                , goTo (RecipeRoute id)
+                                [ saveRecipeCmd { filePath = filePath, code = code, revision = revision }
+                                , goTo (RecipeRoute filePath)
                                 ]
                             )
 
@@ -347,7 +330,8 @@ update msg model =
                             ( { model
                                 | screen =
                                     Edit
-                                        { code = code
+                                        { maybeFilePath = Nothing
+                                        , code = code
                                         , failure = Just failure
                                         }
                               }
@@ -359,7 +343,7 @@ update msg model =
 
         Update ->
             case model.screen of
-                Edit { code } ->
+                Edit { maybeFilePath, code } ->
                     case RecipeParser.parse code of
                         Ok recipe ->
                             let
@@ -369,11 +353,24 @@ update msg model =
                                 title =
                                     Recipe.title recipe
 
-                                id =
-                                    Id.fromString title
+                                filePath =
+                                    maybeFilePath
+                                        |> Maybe.withDefault
+                                            { folder = recipesFolder
+                                            , name =
+                                                PathComponent.autorename title
+                                                    (\idCandidate ->
+                                                        case Store.read { folder = recipesFolder, name = idCandidate } state.recipes of
+                                                            Just _ ->
+                                                                True
+
+                                                            Nothing ->
+                                                                False
+                                                    )
+                                            }
 
                                 oldRecipe =
-                                    Db.get state.recipes id
+                                    Store.read filePath state.recipes
 
                                 revision =
                                     oldRecipe
@@ -381,35 +378,24 @@ update msg model =
                                         |> Maybe.andThen Revision.toString
                                         |> Maybe.map ChangedRevision
                                         |> Maybe.withDefault NewRevision
-
-                                uploadCmd =
-                                    case state.dropbox.state of
-                                        Just dropbox ->
-                                            DropboxSync.uploadCmd dropbox id revision code
-                                                |> Cmd.map DropboxMsg
-
-                                        _ ->
-                                            Cmd.none
                             in
                             ( { model
                                 | state =
                                     { state
                                         | recipes =
-                                            Db.insert
-                                                ( id
-                                                , { recipe = recipe
-                                                  , code = code
-                                                  , checks = Set.empty
-                                                  , revision = revision
-                                                  }
-                                                )
+                                            Store.insert
+                                                filePath
+                                                { recipe = recipe
+                                                , code = code
+                                                , checks = Set.empty
+                                                , revision = revision
+                                                }
                                                 state.recipes
                                     }
                               }
                             , Cmd.batch
-                                [ saveRecipeCmd { id = id, code = code, revision = revision }
-                                , uploadCmd
-                                , goTo (RecipeRoute id)
+                                [ saveRecipeCmd { filePath = filePath, code = code, revision = revision }
+                                , goTo (RecipeRoute filePath)
                                 ]
                             )
 
@@ -417,7 +403,8 @@ update msg model =
                             ( { model
                                 | screen =
                                     Edit
-                                        { code = code
+                                        { maybeFilePath = maybeFilePath
+                                        , code = code
                                         , failure = Just failure
                                         }
                               }
@@ -427,7 +414,7 @@ update msg model =
                 _ ->
                     ( model, Cmd.none )
 
-        AddRecipeToShoppingList id ->
+        AddRecipeToShoppingList filePath ->
             let
                 state =
                     model.state
@@ -436,7 +423,7 @@ update msg model =
                     state.shoppingList
 
                 newShoppingList =
-                    { oldShoppingList | selectedRecipes = Set.insert (Id.toString id) oldShoppingList.selectedRecipes }
+                    { oldShoppingList | selectedRecipes = Dict.insert (PathComponent.toString filePath.name) filePath oldShoppingList.selectedRecipes }
             in
             ( { model
                 | state =
@@ -447,7 +434,7 @@ update msg model =
             , saveShoppingListCmd newShoppingList
             )
 
-        RemoveRecipeFromShoppingList id ->
+        RemoveRecipeFromShoppingList filePath ->
             let
                 state =
                     model.state
@@ -456,7 +443,7 @@ update msg model =
                     model.state.shoppingList
 
                 newSelectedRecipes =
-                    Set.remove (Id.toString id) oldShoppingList.selectedRecipes
+                    Dict.remove (PathComponent.toString filePath.name) oldShoppingList.selectedRecipes
 
                 newIngredients =
                     ingredientsFromRecipes state.recipes newSelectedRecipes
@@ -519,7 +506,7 @@ update msg model =
             , saveShoppingListCmd newShoppingList
             )
 
-        UpdateCheckOnRecipe id ingredientName checked ->
+        UpdateCheckOnRecipe filePath ingredientName checked ->
             let
                 state =
                     model.state
@@ -532,7 +519,7 @@ update msg model =
                         Set.remove
 
                 oldChecks =
-                    Db.get state.recipes id
+                    Store.read filePath state.recipes
                         |> Maybe.map .checks
                         |> Maybe.withDefault Set.empty
 
@@ -541,24 +528,24 @@ update msg model =
 
                 newRecipes =
                     state.recipes
-                        |> Db.update id
+                        |> Store.update filePath
                             (Maybe.map (\entry -> { entry | checks = newChecks }))
             in
             ( { model
                 | state =
                     { state | recipes = newRecipes }
               }
-            , saveRecipeChecksCmd id newChecks
+            , saveRecipeChecksCmd filePath newChecks
             )
 
-        ClearRecipeChecks id ->
+        ClearRecipeChecks filePath ->
             let
                 state =
                     model.state
 
                 newRecipes =
                     state.recipes
-                        |> Db.update id
+                        |> Store.update filePath
                             (Maybe.map
                                 (\entry ->
                                     { entry | checks = Set.empty }
@@ -569,7 +556,7 @@ update msg model =
                 | state =
                     { state | recipes = newRecipes }
               }
-            , saveRecipeChecksCmd id Set.empty
+            , saveRecipeChecksCmd filePath Set.empty
             )
 
         ToggleVideo ->
@@ -678,20 +665,12 @@ update msg model =
             ( model, generateNonce () )
 
         NonceGenerated nonce ->
-            ( model, DropboxSync.loginCmd nonce )
+            ( model, Cmd.none )
 
         Logout ->
             let
                 state =
                     model.state
-
-                logoutCmd =
-                    case state.dropbox.state of
-                        Just dropbox ->
-                            DropboxSync.logoutCmd dropbox LoggedOut
-
-                        Nothing ->
-                            Cmd.none
 
                 oldDropbox =
                     state.dropbox
@@ -705,87 +684,12 @@ update msg model =
             ( { model | state = newState }
             , Cmd.batch
                 [ saveSettingsCmd newState
-                , logoutCmd
                 ]
             )
 
         LoggedOut _ ->
             -- TODO: Allow user to retry on error
             ( model, Cmd.none )
-
-        DropboxMsg dropboxMsg ->
-            let
-                state =
-                    model.state
-            in
-            case state.dropbox.state of
-                Just dropboxState ->
-                    let
-                        ( newDropboxState, newEntries, dropboxCmd ) =
-                            DropboxSync.update dropboxMsg
-                                dropboxState
-                                state.recipes
-                                { revision = .revision
-                                , content = .code
-                                , create =
-                                    \code revision ->
-                                        RecipeParser.parse code
-                                            |> Result.map
-                                                (\recipe ->
-                                                    { recipe = recipe
-                                                    , code = code
-                                                    , checks = Set.empty
-                                                    , revision = revision
-                                                    }
-                                                )
-                                            |> Result.toMaybe
-                                , updateRevision = \revision recipe -> { recipe | revision = revision }
-                                }
-
-                        newRecipes =
-                            newEntries
-                                |> List.foldl
-                                    (\row db ->
-                                        Db.insert row db
-                                    )
-                                    state.recipes
-
-                        saveNewRecipesCmd =
-                            newEntries
-                                |> List.map
-                                    (\( id, entry ) ->
-                                        saveRecipeCmd
-                                            { id = id
-                                            , code = entry.code
-                                            , revision = entry.revision
-                                            }
-                                    )
-                                |> Cmd.batch
-
-                        cmd =
-                            Cmd.batch
-                                [ dropboxCmd |> Cmd.map DropboxMsg
-                                , saveNewRecipesCmd
-                                ]
-
-                        oldDropbox =
-                            state.dropbox
-
-                        newDropbox =
-                            { oldDropbox | state = Just newDropboxState }
-                    in
-                    ( { model
-                        | state =
-                            { state
-                                | dropbox = newDropbox
-                                , recipes = newRecipes
-                            }
-                      }
-                    , cmd
-                    )
-
-                Nothing ->
-                    ( model, Cmd.none )
 
         UrlChanged url ->
             let
@@ -824,12 +728,12 @@ screenFromRoute state route =
         OverviewRoute ->
             Overview
 
-        RecipeRoute id ->
-            Db.get state.recipes id
+        RecipeRoute filePath ->
+            Store.read filePath state.recipes
                 |> Maybe.map
                     (\{ recipe } ->
                         Recipe
-                            id
+                            filePath
                             recipe
                             { showWakeVideo = False
                             }
@@ -837,13 +741,13 @@ screenFromRoute state route =
                 |> Maybe.withDefault Overview
 
         NewRoute ->
-            New { code = "", failure = Nothing }
+            New { maybeFilePath = Nothing, code = "", failure = Nothing }
 
-        EditRoute id ->
-            Db.get state.recipes id
+        EditRoute filePath ->
+            Store.read filePath state.recipes
                 |> Maybe.map
                     (\{ code } ->
-                        Edit { code = code, failure = Nothing }
+                        Edit { maybeFilePath = Just filePath, code = code, failure = Nothing }
                     )
                 |> Maybe.withDefault Overview
 
@@ -864,14 +768,14 @@ stringFromRoute route =
         OverviewRoute ->
             "#"
 
-        RecipeRoute id ->
-            "#recipe:" ++ Url.percentEncode (Id.toString id)
+        RecipeRoute filePath ->
+            "#recipe:" ++ Url.percentEncode (PathComponent.toString filePath.name)
 
         NewRoute ->
             "#new"
 
-        EditRoute id ->
-            "#edit:" ++ Url.percentEncode (Id.toString id)
+        EditRoute filePath ->
+            "#edit:" ++ Url.percentEncode (PathComponent.toString filePath.name)
 
         ShoppingListRoute ->
             "#shopping"
@@ -887,38 +791,7 @@ applyUrl state url =
             ( screenFromRoute state route, state, Cmd.none )
 
         Nothing ->
-            let
-                result =
-                    state.dropbox.nonce
-                        |> Maybe.andThen
-                            (\nonce ->
-                                DropboxSync.parseLoginUrl nonce url
-                            )
-            in
-            case result of
-                Just (Ok newDropboxState) ->
-                    let
-                        oldDropbox =
-                            state.dropbox
-
-                        newDropbox =
-                            { oldDropbox | state = Just newDropboxState }
-
-                        newState =
-                            { state | dropbox = newDropbox }
-                    in
-                    ( screenFromRoute state SettingsRoute
-                    , newState
-                    , Cmd.batch
-                        [ DropboxSync.syncCmd newDropboxState
-                            |> Cmd.map DropboxMsg
-                        , saveSettingsCmd newState
-                        ]
-                    )
-
-                -- TODO: Handle error case.
-                _ ->
-                    ( Overview, state, Cmd.none )
+            ( Overview, state, Cmd.none )
 
 
 parseRoute : Url -> Maybe Route
@@ -936,7 +809,7 @@ parseRoute url =
 
                 else if String.startsWith "recipe:" raw then
                     extractFrom 7 raw
-                        |> Maybe.map Id.fromString
+                        |> Maybe.andThen FilePath.fromString
                         |> Maybe.map RecipeRoute
 
                 else if raw == "new" then
@@ -944,7 +817,7 @@ parseRoute url =
 
                 else if String.startsWith "edit:" raw then
                     extractFrom 5 raw
-                        |> Maybe.map Id.fromString
+                        |> Maybe.andThen FilePath.fromString
                         |> Maybe.map EditRoute
 
                 else if raw == "shopping" then
@@ -958,10 +831,10 @@ parseRoute url =
             )
 
 
-saveRecipeCmd : { id : RecipeId, code : String, revision : Revision } -> Cmd msg
+saveRecipeCmd : { filePath : RecipeId, code : String, revision : Revision } -> Cmd msg
 saveRecipeCmd entry =
     saveRecipe
-        { title = Id.toString entry.id
+        { title = PathComponent.toString entry.filePath.name
         , code = entry.code
         , revision = Revision.toString entry.revision
         }
@@ -971,10 +844,10 @@ port saveRecipe : { title : String, code : String, revision : Maybe String } -> 
 
 
 saveRecipeChecksCmd : RecipeId -> Set String -> Cmd msg
-saveRecipeChecksCmd id checks =
+saveRecipeChecksCmd filePath checks =
     let
         title =
-            Id.toString id
+            PathComponent.toString filePath.name
     in
     saveRecipeChecks
         { title = title
@@ -986,10 +859,10 @@ port saveRecipeChecks : { title : String, checks : List String } -> Cmd msg
 
 
 removeRecipeCmd : RecipeId -> Cmd msg
-removeRecipeCmd id =
+removeRecipeCmd filePath =
     let
         fileName =
-            Id.toString id
+            PathComponent.toString filePath.name
     in
     removeRecipe fileName
 
@@ -1002,7 +875,9 @@ saveShoppingListCmd shoppingList =
     let
         selectedRecipes =
             shoppingList.selectedRecipes
-                |> Set.toList
+                |> Dict.values
+                |> List.map .name
+                |> List.map PathComponent.toString
 
         checked =
             shoppingList.checked |> Set.toList
@@ -1029,9 +904,7 @@ saveSettingsCmd : State -> Cmd msg
 saveSettingsCmd state =
     let
         jsonDropbox =
-            state.dropbox.state
-                |> Maybe.map
-                    DropboxSync.encodeState
+            Nothing
     in
     saveSettings
         { wakeVideoId = Just state.wakeVideoId
@@ -1068,24 +941,22 @@ view model =
                 Overview ->
                     viewOverview model.language
                         (state.recipes
-                            |> Db.toList
+                            |> Store.list recipesFolder
                             |> List.map
-                                (Tuple.mapSecond
-                                    (\entry ->
-                                        Recipe.title entry.recipe
-                                    )
+                                (\( path, entry ) ->
+                                    ( path, Recipe.title entry.recipe )
                                 )
                         )
 
-                Recipe id recipe options ->
+                Recipe filePath recipe options ->
                     let
                         checks =
-                            Db.get state.recipes id
+                            Store.read filePath state.recipes
                                 |> Maybe.map .checks
                                 |> Maybe.withDefault Set.empty
                     in
                     viewRecipe model.language
-                        id
+                        filePath
                         recipe
                         { checks = checks
                         , showVideo = options.showWakeVideo
@@ -1500,29 +1371,22 @@ viewShoppingList language recipes shoppingList =
             [ let
                 selectedRecipes =
                     shoppingList.selectedRecipes
-                        |> Set.toList
+                        |> Dict.values
                         |> List.filterMap
-                            (\rawId ->
-                                let
-                                    id =
-                                        Id.fromString rawId
-                                in
-                                Db.get recipes id
+                            (\filePath ->
+                                Store.read filePath recipes
                                     |> Maybe.map
                                         (\entry ->
-                                            ( id, entry )
+                                            ( filePath, entry )
                                         )
                             )
 
                 unselectedRecipes =
                     recipes
-                        |> Db.filter
-                            (\( _, entry ) ->
-                                let
-                                    title =
-                                        Recipe.title entry.recipe
-                                in
-                                not <| Set.member title shoppingList.selectedRecipes
+                        |> Store.list recipesFolder
+                        |> List.filter
+                            (\( path, _ ) ->
+                                not <| Dict.member (PathComponent.toString path.name) shoppingList.selectedRecipes
                             )
 
                 summaryStyles =
@@ -1549,12 +1413,12 @@ viewShoppingList language recipes shoppingList =
                         { summary =
                             ( summaryStyles
                             , [ Html.text
-                                    (language.shoppingList.addRecipesWithCount <| List.length <| Db.toList unselectedRecipes)
+                                    (language.shoppingList.addRecipesWithCount <| List.length <| unselectedRecipes)
                               ]
                             )
                         , children =
                             [ contentList
-                                (if Db.toList recipes |> List.isEmpty then
+                                (if Store.list recipesFolder recipes |> List.isEmpty then
                                     noRecipes language
 
                                  else
@@ -1567,7 +1431,7 @@ viewShoppingList language recipes shoppingList =
                                         , smallButton [ Css.marginLeft (rem 0.5) ] language.shoppingList.add (AddRecipeToShoppingList id)
                                         ]
                                 )
-                                (Db.toList unselectedRecipes)
+                                unselectedRecipes
                             ]
                         }
                     , contentList
@@ -1609,12 +1473,11 @@ viewShoppingList language recipes shoppingList =
     )
 
 
-ingredientsFromRecipes : RecipeStore -> Set String -> List Ingredient
+ingredientsFromRecipes : RecipeStore -> Dict String FilePath -> List Ingredient
 ingredientsFromRecipes recipes selectedRecipes =
     selectedRecipes
-        |> Set.toList
-        |> List.map Id.fromString
-        |> List.filterMap (\id -> Db.get recipes id)
+        |> Dict.values
+        |> List.filterMap (\filePath -> Store.read filePath recipes)
         |> List.concatMap (\{ recipe } -> Recipe.method recipe |> Recipe.ingredients)
 
 

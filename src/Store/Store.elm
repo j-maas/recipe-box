@@ -1,4 +1,4 @@
-module Store.Store exposing (FilePath, FolderPath, Store, empty, insert, list, read, update)
+module Store.Store exposing (FilePath, FolderPath, Store, delete, empty, insert, insertList, list, read, update)
 
 import Dict exposing (Dict)
 import Store.FilePath as FilePath
@@ -69,6 +69,16 @@ insert path item (Store (Folder folder)) =
                 )
 
 
+insertList : Store item -> List ( FilePath, item ) -> Store item
+insertList initialStore items =
+    List.foldl
+        (\( path, item ) store ->
+            insert path item store
+        )
+        initialStore
+        items
+
+
 read : FilePath -> Store item -> Maybe item
 read path (Store (Folder folder)) =
     case path.folder of
@@ -83,17 +93,32 @@ read path (Store (Folder folder)) =
                     )
 
 
-list : FolderPath -> Store item -> List item
-list path (Store (Folder folder)) =
-    case path of
+list : FolderPath -> Store item -> List ( FilePath, item )
+list path store =
+    listRec path path store
+
+
+listRec : FolderPath -> FolderPath -> Store item -> List ( FilePath, item )
+listRec fullFolderPath currentPath (Store (Folder folder)) =
+    case currentPath of
         [] ->
-            Dict.values folder.contents
+            Dict.toList folder.contents
+                |> List.map
+                    (\( name, content ) ->
+                        ( { folder = fullFolderPath
+
+                          -- This is ok because only valid file paths are inserted into the dict.
+                          , name = PathComponent.unsafe name
+                          }
+                        , content
+                        )
+                    )
 
         child :: rest ->
             Dict.get (PathComponent.toString child) folder.children
                 |> Maybe.map
                     (\subFolder ->
-                        list rest (Store subFolder)
+                        listRec fullFolderPath rest (Store subFolder)
                     )
                 |> Maybe.withDefault []
 
@@ -124,3 +149,8 @@ update path f (Store (Folder folder)) =
                                 folder.children
                     }
                 )
+
+
+delete : FilePath -> Store item -> Store item
+delete path store =
+    update path (always Nothing) store
