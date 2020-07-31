@@ -1,4 +1,4 @@
-module Store.Store exposing (FilePath, FolderPath, Store, delete, empty, insert, insertList, list, read, subfolders, update)
+module Store.Store exposing (FilePath, FolderPath, Store, listAll, delete, empty, insert, insertList, list, read, subfolders, update)
 
 import Dict exposing (Dict)
 import Store.FilePath as FilePath
@@ -94,33 +94,63 @@ read path (Store (Folder folder)) =
 
 
 list : FolderPath -> Store item -> List ( FilePath, item )
-list path store =
-    listRec path path store
+list path (Store f) =
+    findFolder
+        (folderEntries path)
+        []
+        path
+        f
 
 
-listRec : FolderPath -> FolderPath -> Store item -> List ( FilePath, item )
-listRec fullFolderPath currentPath (Store (Folder folder)) =
+findFolder : (Folder item -> a) -> a -> FolderPath -> Folder item -> a
+findFolder f default currentPath (Folder folder) =
     case currentPath of
         [] ->
-            Dict.toList folder.contents
-                |> List.map
-                    (\( name, content ) ->
-                        ( { folder = fullFolderPath
-
-                          -- This is ok because only valid file paths are inserted into the dict.
-                          , name = PathComponent.unsafe name
-                          }
-                        , content
-                        )
-                    )
+            f (Folder folder)
 
         child :: rest ->
             Dict.get (PathComponent.toString child) folder.children
                 |> Maybe.map
                     (\subFolder ->
-                        listRec fullFolderPath rest (Store subFolder)
+                        findFolder f default rest subFolder
                     )
-                |> Maybe.withDefault []
+                |> Maybe.withDefault default
+
+
+folderEntries : FolderPath -> Folder item -> List ( FilePath, item )
+folderEntries path (Folder folder) =
+    Dict.toList folder.contents
+        |> List.map
+            (\( name, content ) ->
+                ( { folder = path
+
+                  -- This is ok because only valid file paths are inserted into the dict.
+                  , name = PathComponent.unsafe name
+                  }
+                , content
+                )
+            )
+
+
+listAll : FolderPath -> Store item -> List ( FilePath, item )
+listAll path (Store f) =
+    findFolder
+        (listAllRec path)
+        []
+        path
+        f
+
+
+listAllRec : FolderPath -> Folder item -> List ( FilePath, item )
+listAllRec path (Folder folder) =
+    folderEntries path (Folder folder)
+        ++ (List.concatMap
+                (\( subName, subFolder ) ->
+                    listAllRec (path ++ [ PathComponent.unsafe subName ]) subFolder
+                )
+            <|
+                Dict.toList folder.children
+           )
 
 
 subfolders : FolderPath -> Store item -> List FolderPath

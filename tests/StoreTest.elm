@@ -5,7 +5,7 @@ import Fuzz
 import Store.FilePath as FilePath
 import Store.Store as Store
 import Test exposing (..)
-import TestUtils exposing (buildFolderPath, buildPathComponent, filePathFuzzer, pathComponentFuzzer)
+import TestUtils exposing (buildFolderPath, buildPathComponent, filePathFuzzer, pathComponentFuzzer, sortEntries)
 
 
 suite : Test
@@ -37,15 +37,12 @@ suite =
                                 ( path, item )
                             )
                             items
-
-                    sort =
-                        List.sortBy (\( path, _ ) -> FilePath.toString path)
                 in
                 entries
                     |> Store.insertList Store.empty
                     |> Store.list folder
-                    |> sort
-                    |> Expect.equalLists (sort entries)
+                    |> sortEntries
+                    |> Expect.equalLists (sortEntries entries)
         , fuzz3 filePathFuzzer Fuzz.int Fuzz.int "updates existing item" <|
             \path firstItem secondItem ->
                 Store.empty
@@ -93,4 +90,40 @@ suite =
                             Store.subfolders sub12 store
                                 |> Expect.equalLists []
                         ]
+        , test "lists all items" <|
+            \_ ->
+                let
+                    parent =
+                        buildFolderPath [ "parent" ]
+
+                    sub1 =
+                        buildFolderPath [ "parent", "sub1" ]
+
+                    sub2 =
+                        buildFolderPath [ "parent", "sub2" ]
+
+                    sub11 =
+                        buildFolderPath [ "parent", "sub1", "sub11" ]
+
+                    sub12 =
+                        buildFolderPath [ "parent", "sub1", "sub12" ]
+
+                    sub21 =
+                        buildFolderPath [ "parent", "sub2", "sub21" ]
+
+                    entries =
+                        [ ( { folder = parent, name = buildPathComponent "parent-1" }, 1 )
+                        , ( { folder = parent, name = buildPathComponent "parent-2" }, 2 )
+                        , ( { folder = sub1, name = buildPathComponent "sub1-3" }, 3 )
+                        , ( { folder = sub1, name = buildPathComponent "sub1-4" }, 4 )
+                        , ( { folder = sub11, name = buildPathComponent "sub11-5" }, 5 )
+                        , ( { folder = sub11, name = buildPathComponent "sub11-6" }, 6 )
+                        , ( { folder = sub21, name = buildPathComponent "sub21-7" }, 7 )
+                        , ( { folder = sub21, name = buildPathComponent "sub21-8" }, 8 )
+                        ]
+                in
+                Store.insertList Store.empty entries
+                    |> Store.listAll []
+                    |> sortEntries
+                    |> Expect.equalLists (sortEntries entries)
         ]

@@ -1,10 +1,13 @@
-module TestUtils exposing (buildFolderPath, buildPathComponent, charsetFuzzer, filePathFuzzer, pathComponentFuzzer, safePathChars)
+module TestUtils exposing (buildFolderPath, buildPathComponent, charsetFuzzer, entriesFuzzer, filePathFuzzer, pathComponentFuzzer, safePathChars, sortEntries)
 
 import Array
 import Fuzz exposing (Fuzzer)
-import Store.FilePath exposing (FilePath)
+import Random
+import Shrink
+import Store.FilePath as FilePath exposing (FilePath)
 import Store.FolderPath as FolderPath exposing (FolderPath)
 import Store.PathComponent as PathComponent exposing (PathComponent)
+import Store.Store as Store exposing (Store)
 
 
 filePathFuzzer : Fuzzer FilePath
@@ -72,3 +75,60 @@ buildFolderPath raw =
 
         Nothing ->
             Debug.todo "Invalid folder path"
+
+
+sortEntries : List ( FilePath, item ) -> List ( FilePath, item )
+sortEntries list =
+    List.sortBy (\( path, _ ) -> FilePath.toString path) list
+
+
+entriesFuzzer : Fuzz.Fuzzer (List ( FilePath, Int ))
+entriesFuzzer =
+    let
+        filePathGenerator =
+            Random.map2
+                (\folder name ->
+                    { folder = folder, name = name }
+                )
+                (Random.int 0 5
+                    |> Random.andThen
+                        (\length ->
+                            Random.list length pathComponentGenerator
+                        )
+                )
+                pathComponentGenerator
+
+        pathComponentGenerator =
+            Random.int 1 5
+                |> Random.andThen
+                    (\length ->
+                        Random.list length (Random.uniform 'A' safePathChars)
+                    )
+                |> Random.map String.fromList
+                |> Random.map PathComponent.unsafe
+
+        shrinkFilePath =
+            Shrink.convert (\( folder, name ) -> { folder = folder, name = name })
+                (\filePath -> ( filePath.folder, filePath.name ))
+                (Shrink.tuple ( Shrink.list shrinkPathComponent, shrinkPathComponent ))
+
+        shrinkPathComponent =
+            Shrink.convert
+                PathComponent.unsafe
+                PathComponent.toString
+                (Shrink.string
+                    |> Shrink.dropIf String.isEmpty
+                )
+    in
+    Fuzz.custom
+        (Random.int 0 50
+            |> Random.andThen
+                (\length ->
+                    Random.list length
+                        (Random.map2 Tuple.pair
+                            filePathGenerator
+                            (Random.int 0 100)
+                        )
+                )
+        )
+        (Shrink.list (Shrink.tuple ( shrinkFilePath, Shrink.int )))

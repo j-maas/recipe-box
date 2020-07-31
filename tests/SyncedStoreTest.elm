@@ -3,10 +3,11 @@ module SyncedStoreTest exposing (suite)
 import Expect
 import Fuzz
 import Store.FilePath exposing (FilePath)
+import Store.FolderPath exposing (FolderPath)
 import Store.Store as Store exposing (Store)
 import Store.SyncedStore as SyncedStore exposing (StoreAccess, SyncedStore)
 import Test exposing (..)
-import TestUtils exposing (filePathFuzzer)
+import TestUtils exposing (entriesFuzzer, filePathFuzzer, sortEntries)
 
 
 suite : Test
@@ -23,6 +24,33 @@ suite =
                     |> SyncedStore.insert filePath firstItem
                     |> SyncedStore.update filePath (Maybe.map ((+) secondItem))
                     |> expectEqualInAllStores filePath (Just <| firstItem + secondItem)
+        , skip <|
+            fuzz2 entriesFuzzer entriesFuzzer "sync results in same items in both stores" <|
+                \localEntries remoteEntries ->
+                    let
+                        localStore =
+                            Store.insertList Store.empty localEntries
+
+                        remoteStore =
+                            Store.insertList Store.empty remoteEntries
+                    in
+                    SyncedStore.with { local = ( localStore, storeAccess ), remote = ( remoteStore, storeAccess ) }
+                        |> SyncedStore.sync []
+                        |> (\syncedStore ->
+                                let
+                                    locals =
+                                        SyncedStore.local syncedStore
+                                            |> listAll
+                                            |> sortEntries
+
+                                    remotes =
+                                        SyncedStore.remote syncedStore
+                                            |> listAll
+                                            |> sortEntries
+                                in
+                                locals
+                                    |> Expect.equalLists remotes
+                           )
         ]
 
 
@@ -34,11 +62,22 @@ emptySyncedStore =
 storeAccess : StoreAccess (Store item) item
 storeAccess =
     { insert = Store.insert
+    , insertList = Store.insertList
     , read = Store.read
     , update = Store.update
     , delete = Store.delete
-    , list = Store.list
+    , listAll = Store.listAll
     }
+
+
+listAll : Store item -> List ( FilePath, item )
+listAll store =
+    listAllRec store []
+
+
+listAllRec : Store item -> FolderPath -> List ( FilePath, item )
+listAllRec store path =
+    List.concat [ Store.list path store, List.concatMap (listAllRec store) (Store.subfolders path store) ]
 
 
 
@@ -47,58 +86,40 @@ storeAccess =
 
 expectEqualInAllStores : FilePath -> Maybe item -> SyncedStore (Store item) (Store item) item -> Expect.Expectation
 expectEqualInAllStores path expected syncedStore =
+    expectBothStores
+        (\store ->
+            let
+                actual =
+                    Store.read path store
+            in
+            if actual == expected then
+                Nothing
+
+            else
+                Just (reportInequality actual expected)
+        )
+        syncedStore
+
+
+expectBothStores : (Store item -> Maybe String) -> SyncedStore (Store item) (Store item) item -> Expect.Expectation
+expectBothStores storeExpectation syncedStore =
     let
-        synced =
-            let
-                actual =
-                    SyncedStore.read path syncedStore
-            in
-            if actual == expected then
-                Nothing
-
-            else
-                Just (reportStoreInequality "SyncedStore" actual expected)
-
         local =
-            let
-                actual =
-                    SyncedStore.local syncedStore
-                        |> Store.read path
-            in
-            if actual == expected then
-                Nothing
-
-            else
-                Just (reportStoreInequality "Local store" actual expected)
+            storeExpectation (SyncedStore.local syncedStore)
+                |> Maybe.map (\failure -> "Local store failed:\n\n" ++ failure)
 
         remote =
-            let
-                actual =
-                    SyncedStore.remote syncedStore
-                        |> Store.read path
-            in
-            if actual == expected then
-                Nothing
-
-            else
-                Just (reportStoreInequality "Remote store" actual expected)
+            storeExpectation (SyncedStore.remote syncedStore)
+                |> Maybe.map (\failure -> "Remote store failed:\n\n" ++ failure)
 
         combined =
-            String.join "\n\n" (List.filterMap identity [ synced, local, remote ])
+            String.join "\n\n\n" (List.filterMap identity [ local, remote ])
     in
     if String.isEmpty combined then
         Expect.pass
 
     else
         Expect.fail combined
-
-
-reportStoreInequality : String -> item -> item -> String
-reportStoreInequality store top bottom =
-    String.join "\n"
-        [ store ++ " returns different item than expected:"
-        , reportInequality top bottom
-        ]
 
 
 reportInequality : item -> item -> String
