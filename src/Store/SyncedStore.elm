@@ -1,4 +1,4 @@
-module Store.SyncedStore exposing (StoreAccess, SyncedStore, insert, local, read, remote, with)
+module Store.SyncedStore exposing (StoreAccess, SyncedStore, delete, insert, local, read, remote, update, with)
 
 import Store.FilePath exposing (FilePath)
 import Store.FolderPath exposing (FolderPath)
@@ -65,3 +65,21 @@ insert path item (SyncedStore stores) =
 read : FilePath -> SyncedStore local remote item -> Maybe item
 read path (SyncedStore stores) =
     stores.localAccess.read path stores.local
+
+
+update : FilePath -> (Maybe item -> Maybe item) -> SyncedStore local remote item -> SyncedStore local remote item
+update path f (SyncedStore stores) =
+    SyncedStore
+        { stores
+            | local = stores.localAccess.update path f stores.local
+            , remote = stores.remoteAccess.update path f stores.remote
+        }
+
+
+delete : FilePath -> SyncedStore local remote item -> SyncedStore local remote item
+delete path (SyncedStore stores) =
+    SyncedStore
+        { stores
+            | local = stores.localAccess.delete path stores.local
+            , remote = stores.remoteAccess.delete path stores.remote
+        }
