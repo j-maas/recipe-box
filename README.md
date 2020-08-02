@@ -1,8 +1,9 @@
 # Recipe Box
 
 ## Getting started
-1. `npm install` to install dependencies.
-2. `npm run watch` to start a server that makes the app available at http://localhost:8000.
+1. Ensure that the [Git submodules](https://git-scm.com/book/en/v2/Git-Tools-Submodules) are initialized: `git submodule update --init`
+2. `npm install` to install dependencies.
+3. `npm run watch` to start a server that makes the app available at http://localhost:8000.
 
 Tests can be run with `npm run test`.
 
@@ -35,16 +36,18 @@ To build everything, run `npm run build` and deploy the `dist` folder.
   - [ ] Add indicator to top of files that explains how to view the recipes for people who do not know what to do with the files.
   - [ ] Add WebDav integration (for NextCloud).
   - [ ] Add DropBox integration.
+    - [ ] Show name of account when logged in.
 - Overview
   - [ ] Filter recipes.
   - [ ] Search by ingredient.
+  - [ ] For duplicated titles, show file name as additional info.
 - Recipe
   - [x] Indicate how many ingredients there are in ingredient heading.
   - [x] Show quantities in method. This is helpful when assembling ingredients while cooking.
   - [ ] Highlight occurrences of ingredients on hover.
   - [ ] Prevent display from turning off while cooking. (Wake Lock API (in draft) is only reasonable implementation.)
     - [x] Workaround: Allow playing a soothing YouTube video in a loop.
-    - [ ] Offer customization of what video to play.
+    - [x] Offer customization of what video to play.
   - [ ] Allow setting portions.
   - [ ] Embed timers.
   - [ ] Instead of brute deletion, have a bin to protect against accidental deletion.
@@ -60,6 +63,8 @@ To build everything, run `npm run build` and deploy the `dist` folder.
   - [ ] Prevent multiple repetitions of context explanations. (E.g., when a quantity is empty, there is a problem for an expected float and an expected text that are listed separately.)
   - [ ] Highlight errors in textarea. (See https://codersblock.com/blog/highlight-text-inside-a-textarea/)
   - [ ] Allow named sections representing steps that have individual ingredient lists for preparation.
+- Settings
+  - [ ] Offer reset to default value.
 - [ ] Make it work offline. (Using a service worker.)
 - [x] Increase font size slightly.
 - [ ] Fix highlight on real button differing from link button.

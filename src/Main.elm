@@ -4,19 +4,28 @@ import Browser
 import Browser.Navigation as Navigation
 import Css exposing (auto, num, pct, rem, zero)
 import Css.Global as Global
+import Db exposing (Db)
 import Dict exposing (Dict)
 import Embed.Youtube
 import Embed.Youtube.Attributes
 import Html.Styled as Html exposing (Html)
 import Html.Styled.Attributes as Attributes exposing (css)
 import Html.Styled.Events as Events
+import Http
+import Id exposing (Id)
 import Ingredient exposing (Ingredient)
 import IngredientMap exposing (IngredientMap)
+import Json.Decode as Decode
 import Language
 import List.Extra as List
 import Recipe exposing (Recipe)
 import RecipeParser
+import Revision exposing (Revision(..))
 import Set exposing (Set)
+import Store.FilePath as FilePath exposing (FilePath)
+import Store.FolderPath exposing (FolderPath)
+import Store.PathComponent as PathComponent
+import Store.Store as Store exposing (Store)
 import TypedUrl
 import Url exposing (Url)
 
@@ -35,8 +44,8 @@ main =
 
 type alias Model =
     { key : Navigation.Key
-    , state : State
     , language : Language
+    , state : State
     , screen : Screen
     }
 
@@ -47,42 +56,78 @@ type alias Language =
 
 type alias State =
     { recipes : RecipeStore
-    , recipeChecks : Dict String (Set String)
     , shoppingList : ShoppingList
     , wakeVideoId : String
+    , dropbox :
+        { nonce : Maybe String
+        , state : Maybe ()
+        }
+    }
+
+
+type alias RecipeStore =
+    Store RecipeEntry
+
+
+type alias RecipeId =
+    Store.FilePath
+
+
+type alias RecipeEntry =
+    { recipe : Recipe
+    , code : String
+    , checks : Set String
+    , revision : Revision
     }
 
 
 type alias ShoppingList =
-    { selectedRecipes : Set String
+    { selectedRecipes : Dict String FilePath
     , checked : Set String
     }
 
 
 type Screen
     = Overview
-    | Recipe Recipe { showWakeVideo : Bool }
-    | Edit { code : String, failure : Maybe RecipeParser.Failure }
+    | Recipe RecipeId Recipe { showWakeVideo : Bool }
+    | New EditState
+    | Edit EditState
     | Shopping
     | Settings SettingsState
+
+
+type alias EditState =
+    { maybeFilePath : Maybe FilePath
+    , code : String
+    , failure : Maybe RecipeParser.Failure
+    }
 
 
 type alias SettingsState =
     { wakeVideoIdField : String
     , wakeVideoIdError : Bool
+    , dropboxError : Bool
     }
 
 
-type alias RecipeStore =
-    Dict String ( Recipe.Parts, String )
-
-
 type alias Flags =
-    { recipes : List String
-    , recipeChecks : List ( String, List String )
+    { recipes :
+        List
+            { fileName : String
+            , code : String
+            , revision : Maybe String
+            , checks : List String
+            }
     , shoppingList : PortShoppingList
-    , settings : { wakeVideoId : Maybe String }
+    , settings : Maybe JsonSettings
     , language : String
+    , nonce : Maybe String
+    }
+
+
+type alias JsonSettings =
+    { wakeVideoId : Maybe String
+    , dropbox : Maybe Decode.Value
     }
 
 
@@ -90,54 +135,108 @@ init : Flags -> Url -> Navigation.Key -> ( Model, Cmd Msg )
 init flags url key =
     let
         recipes =
-            List.filterMap
-                (\code ->
-                    RecipeParser.parse code
-                        |> Result.toMaybe
-                        |> Maybe.map (\recipe -> ( recipe, code ))
-                )
-                flags.recipes
-                |> List.map (\( recipe, code ) -> ( Recipe.title recipe, ( Recipe.method recipe, code ) ))
-                |> Dict.fromList
+            flags.recipes
+                |> List.filterMap
+                    (\entry ->
+                        RecipeParser.parse entry.code
+                            |> Result.toMaybe
+                            |> Maybe.andThen
+                                (\recipe ->
+                                    FilePath.from
+                                        { folder = List.map PathComponent.toString recipesFolder
+                                        , name = entry.fileName
+                                        }
+                                        |> Maybe.map
+                                            (\path ->
+                                                ( path
+                                                , { recipe = recipe
+                                                  , code = entry.code
+                                                  , checks = Set.fromList entry.checks
+                                                  , revision =
+                                                        entry.revision
+                                                            |> Maybe.map SyncedRevision
+                                                            |> Maybe.withDefault NewRevision
+                                                  }
+                                                )
+                                            )
+                                )
+                    )
+                |> Store.insertList Store.empty
 
         shoppingList =
-            { selectedRecipes = flags.shoppingList.selectedRecipes |> Set.fromList
-            , checked = flags.shoppingList.checked |> Set.fromList
+            { selectedRecipes =
+                flags.shoppingList.selectedRecipes
+                    |> dictFromRecipeNames
+            , checked =
+                flags.shoppingList.checked
+                    |> Set.fromList
+            }
+
+        settings =
+            flags.settings
+                |> Maybe.withDefault
+                    { wakeVideoId = Nothing
+                    , dropbox = Nothing
+                    }
+
+        dropbox =
+            { nonce = flags.nonce
+            , state = Nothing
             }
 
         state =
             { recipes = recipes
-            , recipeChecks =
-                List.map
-                    (\( title, checks ) -> ( title, Set.fromList checks ))
-                    flags.recipeChecks
-                    |> Dict.fromList
             , shoppingList = shoppingList
-            , wakeVideoId = flags.settings.wakeVideoId |> Maybe.withDefault "14Cf79j92xA"
+            , wakeVideoId = settings.wakeVideoId |> Maybe.withDefault "14Cf79j92xA" -- The id of a video showing 10 seconds of black
+            , dropbox = dropbox
             }
+
+        ( screen, newState, cmd ) =
+            applyUrl state url
     in
     ( { key = key
-      , state = state
+      , state = newState
       , language = Language.fromString flags.language
-      , screen = parseRoute url |> screenFromRoute state |> Maybe.withDefault Overview
+      , screen = screen
       }
-    , Cmd.none
+    , Cmd.batch [ cmd ]
     )
 
 
+dictFromRecipeNames : List String -> Dict String FilePath
+dictFromRecipeNames names =
+    names
+        |> List.filterMap
+            (\rawName ->
+                PathComponent.fromString rawName
+                    |> Maybe.map (\name -> ( rawName, { folder = recipesFolder, name = name } ))
+            )
+        |> Dict.fromList
+
+
+recipesFolder : FolderPath
+recipesFolder =
+    [ PathComponent.unsafe "recipes" ]
+
+
 type Msg
-    = DeleteRecipe String
+    = DeleteRecipe RecipeId
     | Edited String
-    | Save
-    | AddRecipeToShoppingList String
-    | RemoveRecipeFromShoppingList String
+    | Add
+    | Update
+    | AddRecipeToShoppingList RecipeId
+    | RemoveRecipeFromShoppingList RecipeId
     | UpdateCheckOnShoppingList String Bool
     | ClearShoppingList
-    | UpdateCheckOnRecipe String String Bool
-    | ClearRecipeChecks String
+    | UpdateCheckOnRecipe RecipeId String Bool
+    | ClearRecipeChecks RecipeId
     | ToggleVideo
     | SetWakeVideoUrl String
     | SwitchLanguage String
+    | StartLogin
+    | Logout
+    | LoggedOut (Result Http.Error ())
+    | NonceGenerated String
     | UrlChanged Url
     | LinkClicked Browser.UrlRequest
 
@@ -145,23 +244,20 @@ type Msg
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     let
-        toScreen route =
-            screenFromRoute model.state route |> Maybe.withDefault model.screen
-
         goTo route =
             Navigation.pushUrl model.key (stringFromRoute route)
     in
     case msg of
-        DeleteRecipe title ->
+        DeleteRecipe filePath ->
             let
                 state =
                     model.state
             in
             ( { model
-                | state = { state | recipes = Dict.remove title state.recipes }
+                | state = { state | recipes = Store.delete filePath state.recipes }
               }
             , Cmd.batch
-                [ removeRecipe title
+                [ removeRecipeCmd filePath
                 , goTo OverviewRoute
                 ]
             )
@@ -170,17 +266,20 @@ update msg model =
             let
                 newScreen =
                     case model.screen of
-                        Edit _ ->
-                            Edit { code = code, failure = Nothing }
+                        New state ->
+                            New { state | code = code, failure = Nothing }
+
+                        Edit state ->
+                            Edit { state | code = code, failure = Nothing }
 
                         _ ->
                             model.screen
             in
             ( { model | screen = newScreen }, Cmd.none )
 
-        Save ->
+        Add ->
             case model.screen of
-                Edit { code } ->
+                New { maybeFilePath, code } ->
                     case RecipeParser.parse code of
                         Ok recipe ->
                             let
@@ -190,21 +289,40 @@ update msg model =
                                 title =
                                     Recipe.title recipe
 
-                                parts =
-                                    Recipe.method recipe
+                                fileName =
+                                    PathComponent.autorename title
+                                        (\idCandidate ->
+                                            case Store.read { folder = recipesFolder, name = idCandidate } state.recipes of
+                                                Just _ ->
+                                                    True
+
+                                                Nothing ->
+                                                    False
+                                        )
+
+                                filePath =
+                                    { folder = recipesFolder, name = fileName }
+
+                                revision =
+                                    NewRevision
                             in
                             ( { model
                                 | state =
                                     { state
                                         | recipes =
-                                            Dict.insert title
-                                                ( parts, code )
+                                            Store.insert
+                                                filePath
+                                                { recipe = recipe
+                                                , code = code
+                                                , checks = Set.empty
+                                                , revision = revision
+                                                }
                                                 state.recipes
                                     }
                               }
                             , Cmd.batch
-                                [ saveRecipe { title = title, code = code }
-                                , goTo (RecipeRoute title)
+                                [ saveRecipeCmd { filePath = filePath, code = code, revision = revision }
+                                , goTo (RecipeRoute filePath)
                                 ]
                             )
 
@@ -212,7 +330,8 @@ update msg model =
                             ( { model
                                 | screen =
                                     Edit
-                                        { code = code
+                                        { maybeFilePath = Nothing
+                                        , code = code
                                         , failure = Just failure
                                         }
                               }
@@ -222,7 +341,80 @@ update msg model =
                 _ ->
                     ( model, Cmd.none )
 
-        AddRecipeToShoppingList title ->
+        Update ->
+            case model.screen of
+                Edit { maybeFilePath, code } ->
+                    case RecipeParser.parse code of
+                        Ok recipe ->
+                            let
+                                state =
+                                    model.state
+
+                                title =
+                                    Recipe.title recipe
+
+                                filePath =
+                                    maybeFilePath
+                                        |> Maybe.withDefault
+                                            { folder = recipesFolder
+                                            , name =
+                                                PathComponent.autorename title
+                                                    (\idCandidate ->
+                                                        case Store.read { folder = recipesFolder, name = idCandidate } state.recipes of
+                                                            Just _ ->
+                                                                True
+
+                                                            Nothing ->
+                                                                False
+                                                    )
+                                            }
+
+                                oldRecipe =
+                                    Store.read filePath state.recipes
+
+                                revision =
+                                    oldRecipe
+                                        |> Maybe.map .revision
+                                        |> Maybe.andThen Revision.toString
+                                        |> Maybe.map ChangedRevision
+                                        |> Maybe.withDefault NewRevision
+                            in
+                            ( { model
+                                | state =
+                                    { state
+                                        | recipes =
+                                            Store.insert
+                                                filePath
+                                                { recipe = recipe
+                                                , code = code
+                                                , checks = Set.empty
+                                                , revision = revision
+                                                }
+                                                state.recipes
+                                    }
+                              }
+                            , Cmd.batch
+                                [ saveRecipeCmd { filePath = filePath, code = code, revision = revision }
+                                , goTo (RecipeRoute filePath)
+                                ]
+                            )
+
+                        Err failure ->
+                            ( { model
+                                | screen =
+                                    Edit
+                                        { maybeFilePath = maybeFilePath
+                                        , code = code
+                                        , failure = Just failure
+                                        }
+                              }
+                            , Cmd.none
+                            )
+
+                _ ->
+                    ( model, Cmd.none )
+
+        AddRecipeToShoppingList filePath ->
             let
                 state =
                     model.state
@@ -231,7 +423,7 @@ update msg model =
                     state.shoppingList
 
                 newShoppingList =
-                    { oldShoppingList | selectedRecipes = Set.insert title oldShoppingList.selectedRecipes }
+                    { oldShoppingList | selectedRecipes = Dict.insert (PathComponent.toString filePath.name) filePath oldShoppingList.selectedRecipes }
             in
             ( { model
                 | state =
@@ -242,7 +434,7 @@ update msg model =
             , saveShoppingListCmd newShoppingList
             )
 
-        RemoveRecipeFromShoppingList title ->
+        RemoveRecipeFromShoppingList filePath ->
             let
                 state =
                     model.state
@@ -251,7 +443,7 @@ update msg model =
                     model.state.shoppingList
 
                 newSelectedRecipes =
-                    Set.remove title oldShoppingList.selectedRecipes
+                    Dict.remove (PathComponent.toString filePath.name) oldShoppingList.selectedRecipes
 
                 newIngredients =
                     ingredientsFromRecipes state.recipes newSelectedRecipes
@@ -314,7 +506,7 @@ update msg model =
             , saveShoppingListCmd newShoppingList
             )
 
-        UpdateCheckOnRecipe recipeTitle ingredientName checked ->
+        UpdateCheckOnRecipe filePath ingredientName checked ->
             let
                 state =
                     model.state
@@ -327,45 +519,56 @@ update msg model =
                         Set.remove
 
                 oldChecks =
-                    Dict.get recipeTitle state.recipeChecks
+                    Store.read filePath state.recipes
+                        |> Maybe.map .checks
                         |> Maybe.withDefault Set.empty
 
                 newChecks =
                     operation ingredientName oldChecks
 
-                newRecipeChecks =
-                    state.recipeChecks
-                        |> Dict.insert recipeTitle newChecks
+                newRecipes =
+                    state.recipes
+                        |> Store.update filePath
+                            (Maybe.map (\entry -> { entry | checks = newChecks }))
             in
             ( { model
                 | state =
-                    { state | recipeChecks = newRecipeChecks }
+                    { state | recipes = newRecipes }
               }
-            , saveRecipeChecksCmd recipeTitle newChecks
+            , saveRecipeChecksCmd filePath newChecks
             )
 
-        ClearRecipeChecks title ->
+        ClearRecipeChecks filePath ->
             let
                 state =
                     model.state
 
-                newRecipeChecks =
-                    state.recipeChecks
-                        |> Dict.remove title
+                newRecipes =
+                    state.recipes
+                        |> Store.update filePath
+                            (Maybe.map
+                                (\entry ->
+                                    { entry | checks = Set.empty }
+                                )
+                            )
             in
             ( { model
                 | state =
-                    { state | recipeChecks = newRecipeChecks }
+                    { state | recipes = newRecipes }
               }
-            , saveRecipeChecksCmd title Set.empty
+            , saveRecipeChecksCmd filePath Set.empty
             )
 
         ToggleVideo ->
             let
                 newScreen =
                     case model.screen of
-                        Recipe recipe options ->
-                            Recipe recipe { options | showWakeVideo = not options.showWakeVideo }
+                        Recipe id recipe oldOptions ->
+                            let
+                                newOptions =
+                                    { oldOptions | showWakeVideo = not oldOptions.showWakeVideo }
+                            in
+                            Recipe id recipe newOptions
 
                         _ ->
                             model.screen
@@ -408,8 +611,12 @@ update msg model =
                 ( newModel, cmd ) =
                     case maybeId of
                         Just id ->
+                            let
+                                newState =
+                                    { state | wakeVideoId = id }
+                            in
                             ( { model
-                                | state = { state | wakeVideoId = id }
+                                | state = newState
                                 , screen =
                                     case model.screen of
                                         Settings s ->
@@ -422,7 +629,7 @@ update msg model =
                                         _ ->
                                             model.screen
                               }
-                            , saveSettings { wakeVideoId = id }
+                            , saveSettingsCmd newState
                             )
 
                         Nothing ->
@@ -454,8 +661,48 @@ update msg model =
             , saveLanguage code
             )
 
+        StartLogin ->
+            ( model, generateNonce () )
+
+        NonceGenerated nonce ->
+            ( model, Cmd.none )
+
+        Logout ->
+            let
+                state =
+                    model.state
+
+                oldDropbox =
+                    state.dropbox
+
+                newDropbox =
+                    { oldDropbox | state = Nothing }
+
+                newState =
+                    { state | dropbox = newDropbox }
+            in
+            ( { model | state = newState }
+            , Cmd.batch
+                [ saveSettingsCmd newState
+                ]
+            )
+
+        LoggedOut _ ->
+            -- TODO: Allow user to retry on error
+            ( model, Cmd.none )
+
         UrlChanged url ->
-            ( { model | screen = toScreen (parseRoute url) }, Cmd.none )
+            let
+                ( newScreen, newState, cmd ) =
+                    applyUrl model.state url
+
+                newModel =
+                    { model
+                        | state = newState
+                        , screen = newScreen
+                    }
+            in
+            ( newModel, cmd )
 
         LinkClicked request ->
             case request of
@@ -468,46 +715,51 @@ update msg model =
 
 type Route
     = OverviewRoute
-    | RecipeRoute String
+    | RecipeRoute RecipeId
     | NewRoute
-    | EditRoute String
+    | EditRoute RecipeId
     | ShoppingListRoute
     | SettingsRoute
 
 
-screenFromRoute : State -> Route -> Maybe Screen
+screenFromRoute : State -> Route -> Screen
 screenFromRoute state route =
     case route of
         OverviewRoute ->
-            Just Overview
+            Overview
 
-        RecipeRoute title ->
-            Dict.get title state.recipes
+        RecipeRoute filePath ->
+            Store.read filePath state.recipes
                 |> Maybe.map
-                    (\( recipe, _ ) ->
-                        Recipe (Recipe.from title recipe) { showWakeVideo = False }
+                    (\{ recipe } ->
+                        Recipe
+                            filePath
+                            recipe
+                            { showWakeVideo = False
+                            }
                     )
+                |> Maybe.withDefault Overview
 
         NewRoute ->
-            Just <| Edit { code = "", failure = Nothing }
+            New { maybeFilePath = Nothing, code = "", failure = Nothing }
 
-        EditRoute title ->
-            Dict.get title state.recipes
+        EditRoute filePath ->
+            Store.read filePath state.recipes
                 |> Maybe.map
-                    (\( _, code ) ->
-                        Edit { code = code, failure = Nothing }
+                    (\{ code } ->
+                        Edit { maybeFilePath = Just filePath, code = code, failure = Nothing }
                     )
+                |> Maybe.withDefault Overview
 
         ShoppingListRoute ->
-            Just Shopping
+            Shopping
 
         SettingsRoute ->
-            Just <|
-                Settings
-                    { wakeVideoIdError = False
-                    , wakeVideoIdField =
-                        "https://youtu.be/" ++ state.wakeVideoId
-                    }
+            Settings
+                { wakeVideoIdField = "https://youtu.be/" ++ state.wakeVideoId
+                , wakeVideoIdError = False
+                , dropboxError = False
+                }
 
 
 stringFromRoute : Route -> String
@@ -516,14 +768,14 @@ stringFromRoute route =
         OverviewRoute ->
             "#"
 
-        RecipeRoute title ->
-            "#recipe:" ++ Url.percentEncode title
+        RecipeRoute filePath ->
+            "#recipe:" ++ Url.percentEncode (PathComponent.toString filePath.name)
 
         NewRoute ->
             "#new"
 
-        EditRoute title ->
-            "#edit:" ++ Url.percentEncode title
+        EditRoute filePath ->
+            "#edit:" ++ Url.percentEncode (PathComponent.toString filePath.name)
 
         ShoppingListRoute ->
             "#shopping"
@@ -532,7 +784,17 @@ stringFromRoute route =
             "#settings"
 
 
-parseRoute : Url -> Route
+applyUrl : State -> Url -> ( Screen, State, Cmd Msg )
+applyUrl state url =
+    case parseRoute url of
+        Just route ->
+            ( screenFromRoute state route, state, Cmd.none )
+
+        Nothing ->
+            ( Overview, state, Cmd.none )
+
+
+parseRoute : Url -> Maybe Route
 parseRoute url =
     url.fragment
         |> Maybe.andThen
@@ -547,6 +809,7 @@ parseRoute url =
 
                 else if String.startsWith "recipe:" raw then
                     extractFrom 7 raw
+                        |> Maybe.andThen FilePath.fromString
                         |> Maybe.map RecipeRoute
 
                 else if raw == "new" then
@@ -554,6 +817,7 @@ parseRoute url =
 
                 else if String.startsWith "edit:" raw then
                     extractFrom 5 raw
+                        |> Maybe.andThen FilePath.fromString
                         |> Maybe.map EditRoute
 
                 else if raw == "shopping" then
@@ -565,21 +829,42 @@ parseRoute url =
                 else
                     Nothing
             )
-        |> Maybe.withDefault OverviewRoute
 
 
-port saveRecipe : { title : String, code : String } -> Cmd msg
+saveRecipeCmd : { filePath : RecipeId, code : String, revision : Revision } -> Cmd msg
+saveRecipeCmd entry =
+    saveRecipe
+        { title = PathComponent.toString entry.filePath.name
+        , code = entry.code
+        , revision = Revision.toString entry.revision
+        }
 
 
-saveRecipeChecksCmd : String -> Set String -> Cmd msg
-saveRecipeChecksCmd recipeTitle checks =
+port saveRecipe : { title : String, code : String, revision : Maybe String } -> Cmd msg
+
+
+saveRecipeChecksCmd : RecipeId -> Set String -> Cmd msg
+saveRecipeChecksCmd filePath checks =
+    let
+        title =
+            PathComponent.toString filePath.name
+    in
     saveRecipeChecks
-        { title = recipeTitle
+        { title = title
         , checks = checks |> Set.toList
         }
 
 
 port saveRecipeChecks : { title : String, checks : List String } -> Cmd msg
+
+
+removeRecipeCmd : RecipeId -> Cmd msg
+removeRecipeCmd filePath =
+    let
+        fileName =
+            PathComponent.toString filePath.name
+    in
+    removeRecipe fileName
 
 
 port removeRecipe : String -> Cmd msg
@@ -590,7 +875,9 @@ saveShoppingListCmd shoppingList =
     let
         selectedRecipes =
             shoppingList.selectedRecipes
-                |> Set.toList
+                |> Dict.values
+                |> List.map .name
+                |> List.map PathComponent.toString
 
         checked =
             shoppingList.checked |> Set.toList
@@ -613,12 +900,30 @@ port saveShoppingList : PortShoppingList -> Cmd msg
 port saveLanguage : String -> Cmd msg
 
 
-port saveSettings : { wakeVideoId : String } -> Cmd msg
+saveSettingsCmd : State -> Cmd msg
+saveSettingsCmd state =
+    let
+        jsonDropbox =
+            Nothing
+    in
+    saveSettings
+        { wakeVideoId = Just state.wakeVideoId
+        , dropbox = jsonDropbox
+        }
+
+
+port saveSettings : JsonSettings -> Cmd msg
+
+
+port generateNonce : () -> Cmd msg
+
+
+port nonceGenerated : (String -> msg) -> Sub msg
 
 
 subscriptions : Model -> Sub Msg
 subscriptions _ =
-    Sub.none
+    nonceGenerated NonceGenerated
 
 
 
@@ -634,32 +939,42 @@ view model =
         ( maybeSubtitle, body ) =
             case model.screen of
                 Overview ->
-                    viewOverview model.language (Dict.keys state.recipes)
+                    viewOverview model.language
+                        (state.recipes
+                            |> Store.list recipesFolder
+                            |> List.map
+                                (\( path, entry ) ->
+                                    ( path, Recipe.title entry.recipe )
+                                )
+                        )
 
-                Recipe recipe options ->
+                Recipe filePath recipe options ->
                     let
-                        title =
-                            Recipe.title recipe
-
-                        recipeChecks =
-                            Dict.get title model.state.recipeChecks
+                        checks =
+                            Store.read filePath state.recipes
+                                |> Maybe.map .checks
+                                |> Maybe.withDefault Set.empty
                     in
                     viewRecipe model.language
+                        filePath
                         recipe
-                        { maybeChecks = recipeChecks
+                        { checks = checks
                         , showVideo = options.showWakeVideo
                         , videoId =
                             state.wakeVideoId
                         }
 
+                New { code, failure } ->
+                    viewEditRecipe model.language code failure Add
+
                 Edit { code, failure } ->
-                    viewEditRecipe model.language code failure
+                    viewEditRecipe model.language code failure Update
 
                 Shopping ->
                     viewShoppingList model.language state.recipes state.shoppingList
 
                 Settings s ->
-                    viewSettings model.language s state.wakeVideoId
+                    viewSettings model.language s state
     in
     { title =
         model.language.title
@@ -684,8 +999,8 @@ view model =
     }
 
 
-viewOverview : Language -> List String -> ( Maybe String, Html Msg )
-viewOverview language recipeTitles =
+viewOverview : Language -> List ( RecipeId, String ) -> ( Maybe String, Html Msg )
+viewOverview language recipes =
     ( Nothing
     , Html.div []
         [ Html.div [ css [ toolbarSpacingStyle, Css.marginBottom (rem 1) ] ] [ languagePicker language, navLink [] language.overview.goToSettings SettingsRoute ]
@@ -694,7 +1009,7 @@ viewOverview language recipeTitles =
             [ navLink [] language.overview.goToShoppingList ShoppingListRoute
             ]
         , toolbar [ linkButton language.overview.newRecipe NewRoute ]
-        , viewRecipeList language recipeTitles
+        , viewRecipeList language recipes
         ]
     )
 
@@ -723,18 +1038,18 @@ languagePicker currentLanguage =
         )
 
 
-viewRecipeList : Language -> List String -> Html Msg
-viewRecipeList language recipeTitles =
+viewRecipeList : Language -> List ( RecipeId, String ) -> Html Msg
+viewRecipeList language recipes =
     contentList
         (noRecipes language)
         (ul
             [ recipeListStyle ]
             []
         )
-        (\title ->
-            Html.li [] [ viewRecipeLink title ]
+        (\( id, title ) ->
+            Html.li [] [ viewRecipeLink id title ]
         )
-        recipeTitles
+        recipes
 
 
 noRecipes : Language -> List (Html Msg)
@@ -750,12 +1065,12 @@ recipeListStyle =
         ]
 
 
-viewRecipeLink : String -> Html Msg
-viewRecipeLink title =
+viewRecipeLink : RecipeId -> String -> Html Msg
+viewRecipeLink id title =
     Html.a
         [ css [ recipeLinkStyle ]
         , Attributes.href
-            (RecipeRoute title |> stringFromRoute)
+            (RecipeRoute id |> stringFromRoute)
         ]
         [ Html.text title
         ]
@@ -778,14 +1093,14 @@ recipeLinkStyle =
 
 
 type alias RecipeViewOptions =
-    { maybeChecks : Maybe (Set String)
+    { checks : Set String
     , showVideo : Bool
     , videoId : String
     }
 
 
-viewRecipe : Language -> Recipe -> RecipeViewOptions -> ( Maybe String, Html Msg )
-viewRecipe language recipe options =
+viewRecipe : Language -> RecipeId -> Recipe -> RecipeViewOptions -> ( Maybe String, Html Msg )
+viewRecipe language id recipe options =
     let
         title =
             Recipe.title recipe
@@ -795,15 +1110,12 @@ viewRecipe language recipe options =
                 |> Recipe.ingredients
                 |> IngredientMap.fromIngredients
 
-        checks =
-            options.maybeChecks |> Maybe.withDefault Set.empty
-
         ingredientsView =
             viewIngredientList
                 [ Html.text language.recipe.noIngredientsRequired ]
                 ingredientMap
-                checks
-                (UpdateCheckOnRecipe title)
+                options.checks
+                (UpdateCheckOnRecipe id)
 
         stepsView =
             Recipe.map
@@ -843,8 +1155,8 @@ viewRecipe language recipe options =
         [ Html.nav []
             [ backToOverview language
             , toolbar
-                [ linkButton language.recipe.edit (EditRoute <| Recipe.title recipe)
-                , button [] language.recipe.delete (DeleteRecipe <| Recipe.title recipe)
+                [ linkButton language.recipe.edit (EditRoute id)
+                , button [] language.recipe.delete (DeleteRecipe id)
                 ]
             , details [ Css.marginTop (rem 1), Css.marginBottom (rem 1) ]
                 []
@@ -892,14 +1204,14 @@ viewRecipe language recipe options =
                         )
                     , children =
                         ingredientsView
-                            :: (if Set.isEmpty checks then
+                            :: (if Set.isEmpty options.checks then
                                     []
 
                                 else
                                     [ toolbar
                                         [ smallButton []
                                             language.clearChecks
-                                            (ClearRecipeChecks title)
+                                            (ClearRecipeChecks id)
                                         ]
                                     ]
                                )
@@ -1002,8 +1314,8 @@ viewVideo id =
         ]
 
 
-viewEditRecipe : Language -> String -> Maybe RecipeParser.Failure -> ( Maybe String, Html Msg )
-viewEditRecipe language code maybeFailure =
+viewEditRecipe : Language -> String -> Maybe RecipeParser.Failure -> Msg -> ( Maybe String, Html Msg )
+viewEditRecipe language code maybeFailure action =
     ( Nothing
     , Html.div []
         [ Html.nav [] [ backToOverview language ]
@@ -1046,7 +1358,7 @@ viewEditRecipe language code maybeFailure =
                 ]
             ]
             []
-        , button [] language.editRecipe.save Save
+        , button [] language.editRecipe.save action
         ]
     )
 
@@ -1058,12 +1370,24 @@ viewShoppingList language recipes shoppingList =
         selectedRecipesView =
             [ let
                 selectedRecipes =
-                    shoppingList.selectedRecipes |> Set.toList
+                    shoppingList.selectedRecipes
+                        |> Dict.values
+                        |> List.filterMap
+                            (\filePath ->
+                                Store.read filePath recipes
+                                    |> Maybe.map
+                                        (\entry ->
+                                            ( filePath, entry )
+                                        )
+                            )
 
                 unselectedRecipes =
                     recipes
-                        |> Dict.keys
-                        |> List.filter (\title -> not <| Set.member title shoppingList.selectedRecipes)
+                        |> Store.list recipesFolder
+                        |> List.filter
+                            (\( path, _ ) ->
+                                not <| Dict.member (PathComponent.toString path.name) shoppingList.selectedRecipes
+                            )
 
                 summaryStyles =
                     [ headingFontStyle ]
@@ -1089,22 +1413,22 @@ viewShoppingList language recipes shoppingList =
                         { summary =
                             ( summaryStyles
                             , [ Html.text
-                                    (language.shoppingList.addRecipesWithCount <| List.length unselectedRecipes)
+                                    (language.shoppingList.addRecipesWithCount <| List.length <| unselectedRecipes)
                               ]
                             )
                         , children =
                             [ contentList
-                                (if Dict.isEmpty recipes then
+                                (if Store.list recipesFolder recipes |> List.isEmpty then
                                     noRecipes language
 
                                  else
                                     [ Html.text language.shoppingList.allRecipesSelected ]
                                 )
                                 (ul [ recipeListStyle ] [])
-                                (\title ->
+                                (\( id, entry ) ->
                                     Html.li []
-                                        [ viewRecipeLink title
-                                        , smallButton [ Css.marginLeft (rem 0.5) ] language.shoppingList.add (AddRecipeToShoppingList title)
+                                        [ viewRecipeLink id (Recipe.title entry.recipe)
+                                        , smallButton [ Css.marginLeft (rem 0.5) ] language.shoppingList.add (AddRecipeToShoppingList id)
                                         ]
                                 )
                                 unselectedRecipes
@@ -1113,10 +1437,10 @@ viewShoppingList language recipes shoppingList =
                     , contentList
                         [ Html.text language.shoppingList.noRecipeSelected ]
                         (ul [ recipeListStyle ] [])
-                        (\title ->
+                        (\( id, entry ) ->
                             Html.li []
-                                [ viewRecipeLink title
-                                , smallButton [ Css.marginLeft (rem 0.5) ] language.shoppingList.remove (RemoveRecipeFromShoppingList title)
+                                [ viewRecipeLink id (Recipe.title entry.recipe)
+                                , smallButton [ Css.marginLeft (rem 0.5) ] language.shoppingList.remove (RemoveRecipeFromShoppingList id)
                                 ]
                         )
                         selectedRecipes
@@ -1149,31 +1473,73 @@ viewShoppingList language recipes shoppingList =
     )
 
 
-ingredientsFromRecipes : RecipeStore -> Set String -> List Ingredient
+ingredientsFromRecipes : RecipeStore -> Dict String FilePath -> List Ingredient
 ingredientsFromRecipes recipes selectedRecipes =
     selectedRecipes
-        |> Set.toList
-        |> List.filterMap (\title -> Dict.get title recipes)
-        |> List.concatMap (\( parts, _ ) -> Recipe.ingredients parts)
+        |> Dict.values
+        |> List.filterMap (\filePath -> Store.read filePath recipes)
+        |> List.concatMap (\{ recipe } -> Recipe.method recipe |> Recipe.ingredients)
 
 
-viewSettings : Language -> SettingsState -> String -> ( Maybe String, Html Msg )
-viewSettings language state videoId =
+viewSettings : Language -> SettingsState -> State -> ( Maybe String, Html Msg )
+viewSettings language settingsState state =
     ( Nothing
     , let
         wakeVideoError =
-            if state.wakeVideoIdError then
+            if settingsState.wakeVideoIdError then
                 Just language.settings.videoUrlInvalid
 
             else
                 Nothing
+
+        wakeVideoSetting =
+            Html.div []
+                [ h2 [] [] [ Html.text "Keep screen awake video" ]
+                , textInput language.settings.videoUrlLabel settingsState.wakeVideoIdField SetWakeVideoUrl wakeVideoError
+                , viewVideo state.wakeVideoId
+                ]
+
+        dropboxSetting =
+            let
+                loginButton =
+                    button [] "Log into Dropbox" StartLogin
+
+                logoutButton =
+                    button [] "Log out of Dropbox" Logout
+            in
+            Html.div []
+                (h2 [] [] [ Html.text "Dropbox" ]
+                    :: (case state.dropbox.state of
+                            Just credentials ->
+                                [ p [] [] [ Html.text "You are currently logged in to Dropbox." ]
+                                , logoutButton
+                                ]
+
+                            Nothing ->
+                                [ loginButton ]
+                       )
+                )
       in
       Html.div []
         [ Html.nav []
             [ backToOverview language ]
         , h1 [] [] [ Html.text language.settings.title ]
-        , textInput language.settings.videoUrlLabel state.wakeVideoIdField SetWakeVideoUrl wakeVideoError
-        , viewVideo videoId
+        , Html.div
+            [ css
+                [ Css.displayFlex
+                , Css.flexDirection Css.column
+                , Global.children
+                    [ Global.everything
+                        [ Global.adjacentSiblings
+                            [ Global.everything
+                                [ Css.marginTop (rem 1)
+                                ]
+                            ]
+                        ]
+                    ]
+                ]
+            ]
+            [ wakeVideoSetting, dropboxSetting ]
         ]
     )
 
