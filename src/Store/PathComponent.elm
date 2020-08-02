@@ -1,4 +1,4 @@
-module Store.PathComponent exposing (PathComponent, autorename, fromString, toString, unsafe)
+module Store.PathComponent exposing (NameCollision(..), PathComponent, autorename, fromString, nameCollisionFromMember, toString, unsafe)
 
 import Set exposing (Set)
 import String.Extra as String
@@ -27,30 +27,46 @@ unsafe raw =
     PathComponent raw
 
 
-autorename : String -> (PathComponent -> Bool) -> PathComponent
-autorename proposal isMember =
+autorename : String -> (PathComponent -> NameCollision) -> PathComponent
+autorename proposal nameCollision =
     let
         proposalId =
             sanitize proposal
     in
-    if isMember proposalId then
-        autorenameWithNumber 1 proposal isMember
+    case nameCollision proposalId of
+        Collision ->
+            autorenameWithNumber 1 proposal nameCollision
+
+        NewName ->
+            proposalId
+
+
+type NameCollision
+    = Collision
+    | NewName
+
+
+nameCollisionFromMember : Bool -> NameCollision
+nameCollisionFromMember isMember =
+    if isMember then
+        Collision
 
     else
-        proposalId
+        NewName
 
 
-autorenameWithNumber : Int -> String -> (PathComponent -> Bool) -> PathComponent
-autorenameWithNumber suffix proposal isMember =
+autorenameWithNumber : Int -> String -> (PathComponent -> NameCollision) -> PathComponent
+autorenameWithNumber suffix proposal nameCollision =
     let
         proposalId =
-            sanitize (proposal ++ String.fromInt suffix)
+            sanitize (proposal ++ "-" ++ String.fromInt suffix)
     in
-    if isMember proposalId then
-        autorenameWithNumber (suffix + 1) proposal isMember
+    case nameCollision proposalId of
+        Collision ->
+            autorenameWithNumber (suffix + 1) proposal nameCollision
 
-    else
-        proposalId
+        NewName ->
+            proposalId
 
 
 isSafeCharacter : Char -> Bool

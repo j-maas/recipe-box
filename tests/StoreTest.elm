@@ -99,14 +99,8 @@ suite =
                     sub1 =
                         buildFolderPath [ "parent", "sub1" ]
 
-                    sub2 =
-                        buildFolderPath [ "parent", "sub2" ]
-
                     sub11 =
                         buildFolderPath [ "parent", "sub1", "sub11" ]
-
-                    sub12 =
-                        buildFolderPath [ "parent", "sub1", "sub12" ]
 
                     sub21 =
                         buildFolderPath [ "parent", "sub2", "sub21" ]

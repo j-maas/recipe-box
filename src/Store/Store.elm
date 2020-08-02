@@ -3,7 +3,7 @@ module Store.Store exposing (Store, delete, empty, insert, insertList, insertWit
 import Dict exposing (Dict)
 import Store.FilePath exposing (FilePath)
 import Store.FolderPath exposing (FolderPath)
-import Store.PathComponent as PathComponent
+import Store.PathComponent as PathComponent exposing (NameCollision(..))
 
 
 type Store item
@@ -70,8 +70,8 @@ insertWithRename path item store =
                     PathComponent.autorename (PathComponent.toString path.name)
                         (\candidate ->
                             read { path | name = candidate } store
-                                |> Maybe.map (always False)
-                                |> Maybe.withDefault True
+                                |> Maybe.map (always Collision)
+                                |> Maybe.withDefault NewName
                         )
             }
     in

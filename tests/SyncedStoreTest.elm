@@ -3,12 +3,11 @@ module SyncedStoreTest exposing (suite)
 import Expect
 import Fuzz
 import Store.FilePath exposing (FilePath)
-import Store.FolderPath exposing (FolderPath)
 import Store.Store as Store exposing (Store)
 import Store.SyncedStore as SyncedStore exposing (LocalStoreAccess, RemoteStoreAccess, SyncStateAccess, SyncedStore)
 import Store.VersionStore as VersionStore exposing (VersionStore)
 import Test exposing (..)
-import TestUtils exposing (entriesFuzzer, filePathFuzzer, sortEntries)
+import TestUtils exposing (buildFolderPath, buildPathComponent, entriesFuzzer, filePathFuzzer, sortEntries)
 
 
 suite : Test
@@ -19,14 +18,76 @@ suite =
                 emptySyncedStore
                     |> SyncedStore.insert filePath item
                     |> expectEqualInAllStores filePath (Just item)
+        , test "syncs locally item added to remote" <|
+            \_ ->
+                let
+                    filePath =
+                        { folder = buildFolderPath [], name = buildPathComponent "added" }
+
+                    item =
+                        1
+
+                    localStore =
+                        VersionStore.insertList
+                            VersionStore.empty
+                            [ ( filePath, item ) ]
+
+                    remoteStore =
+                        VersionStore.empty
+                in
+                SyncedStore.with
+                    { local = ( localStore, localStoreAccess )
+                    , sync = ( Store.empty, syncStoreAccess )
+                    , remote = ( remoteStore, remoteStoreAccess )
+                    }
+                    |> SyncedStore.sync []
+                    |> expectEqualInAllStores filePath (Just item)
+        , test "resolves conflict" <|
+            \_ ->
+                let
+                    folder =
+                        buildFolderPath []
+
+                    firstFilePath =
+                        { folder = folder
+                        , name = buildPathComponent "added"
+                        }
+
+                    secondFilePath =
+                        { folder = folder
+                        , name = buildPathComponent "added-1"
+                        }
+
+                    localItem =
+                        1
+
+                    remoteItem =
+                        2
+
+                    localStore =
+                        VersionStore.insertList VersionStore.empty
+                            [ ( firstFilePath, localItem ) ]
+
+                    remoteStore =
+                        VersionStore.insertList VersionStore.empty
+                            [ ( firstFilePath, remoteItem ) ]
+                in
+                SyncedStore.with
+                    { local = ( localStore, localStoreAccess )
+                    , sync = ( Store.empty, syncStoreAccess )
+                    , remote = ( remoteStore, remoteStoreAccess )
+                    }
+                    |> SyncedStore.sync []
+                    |> Expect.all
+                        [ expectEqualInAllStores firstFilePath (Just remoteItem)
+                        , expectEqualInAllStores secondFilePath (Just localItem)
+                        ]
         , fuzz2 entriesFuzzer entriesFuzzer "sync results in same items in both stores" <|
             \localEntries remoteEntries ->
                 let
-                    localStore : LocalStore
                     localStore =
                         VersionStore.insertList VersionStore.empty localEntries
 
-                    remoteStore : RemoteStore
                     remoteStore =
                         VersionStore.insertList VersionStore.empty remoteEntries
                 in

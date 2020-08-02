@@ -266,7 +266,8 @@ syncFile path (SyncedStore stores) =
                             }
 
                     else
-                        resolveConflict path
+                        resolveConflict
+                            path
                             { local =
                                 Just
                                     ( localItem
