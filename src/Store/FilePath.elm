@@ -3,7 +3,6 @@ module Store.FilePath exposing (FilePath, from, fromString, toString)
 import List.Extra as List
 import Store.FolderPath as FolderPath exposing (FolderPath)
 import Store.PathComponent as PathComponent exposing (PathComponent)
-import Utils
 
 
 type alias FilePath =

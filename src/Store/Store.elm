@@ -1,4 +1,4 @@
-module Store.Store exposing (FilePath, FolderPath, Store, listAll, delete, empty, insert, insertList, list, read, subfolders, update)
+module Store.Store exposing (FilePath, FolderPath, Store, insertWithRename, delete, empty, insert, insertList, list, listAll, read, subfolders, update)
 
 import Dict exposing (Dict)
 import Store.FilePath as FilePath
@@ -67,6 +67,23 @@ insert path item (Store (Folder folder)) =
                                 folder.children
                     }
                 )
+
+
+insertWithRename : FilePath -> item -> Store item -> ( FilePath, Store item )
+insertWithRename path item store =
+    let
+        newPath =
+            { path
+                | name =
+                    PathComponent.autorename (PathComponent.toString path.name)
+                        (\candidate ->
+                            read { path | name = candidate } store
+                                |> Maybe.map (always False)
+                                |> Maybe.withDefault True
+                        )
+            }
+    in
+    ( newPath, insert newPath item store )
 
 
 insertList : Store item -> List ( FilePath, item ) -> Store item

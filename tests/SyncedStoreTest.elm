@@ -5,7 +5,7 @@ import Fuzz
 import Store.FilePath exposing (FilePath)
 import Store.FolderPath exposing (FolderPath)
 import Store.Store as Store exposing (Store)
-import Store.SyncedStore as SyncedStore exposing (StoreAccess, SyncedStore)
+import Store.SyncedStore as SyncedStore exposing (LocalStoreAccess, RemoteStoreAccess, SyncedStore)
 import Test exposing (..)
 import TestUtils exposing (entriesFuzzer, filePathFuzzer, sortEntries)
 
@@ -24,93 +24,165 @@ suite =
                     |> SyncedStore.insert filePath firstItem
                     |> SyncedStore.update filePath (Maybe.map ((+) secondItem))
                     |> expectEqualInAllStores filePath (Just <| firstItem + secondItem)
-        , skip <|
-            fuzz2 entriesFuzzer entriesFuzzer "sync results in same items in both stores" <|
-                \localEntries remoteEntries ->
-                    let
-                        localStore =
-                            Store.insertList Store.empty localEntries
+        , fuzz2 entriesFuzzer entriesFuzzer "sync results in same items in both stores" <|
+            \localEntries remoteEntries ->
+                let
+                    localStore =
+                        List.map (\( path, item ) -> ( path, ( item, Nothing ) )) localEntries
+                            |> Store.insertList Store.empty
 
-                        remoteStore =
-                            Store.insertList Store.empty remoteEntries
-                    in
-                    SyncedStore.with { local = ( localStore, storeAccess ), remote = ( remoteStore, storeAccess ) }
-                        |> SyncedStore.sync []
-                        |> (\syncedStore ->
-                                let
-                                    locals =
-                                        SyncedStore.local syncedStore
-                                            |> listAll
-                                            |> sortEntries
+                    remoteStore =
+                        ( List.length remoteEntries
+                        , List.indexedMap (\index ( path, item ) -> ( path, ( item, String.fromInt index ) )) remoteEntries
+                            |> Store.insertList Store.empty
+                        )
+                in
+                SyncedStore.with
+                    { local = ( localStore, localStoreAccess )
+                    , remote = ( remoteStore, remoteStoreAccess )
+                    }
+                    |> SyncedStore.sync []
+                    |> (\syncedStore ->
+                            let
+                                locals =
+                                    SyncedStore.local syncedStore
+                                        |> Store.listAll []
+                                        |> List.map (\( path, ( item, _ ) ) -> ( path, item ))
+                                        |> sortEntries
 
-                                    remotes =
-                                        SyncedStore.remote syncedStore
-                                            |> listAll
-                                            |> sortEntries
-                                in
-                                locals
-                                    |> Expect.equalLists remotes
-                           )
+                                remotes =
+                                    SyncedStore.remote syncedStore
+                                        |> Tuple.second
+                                        |> Store.listAll []
+                                        |> List.map (\( path, ( item, _ ) ) -> ( path, item ))
+                                        |> sortEntries
+                            in
+                            locals
+                                |> Expect.equalLists remotes
+                       )
         ]
 
 
-emptySyncedStore : SyncedStore (Store item) (Store item) item
+emptySyncedStore : SyncedStore LocalStore RemoteStore Int
 emptySyncedStore =
-    SyncedStore.with { local = ( Store.empty, storeAccess ), remote = ( Store.empty, storeAccess ) }
+    SyncedStore.with { local = ( Store.empty, localStoreAccess ), remote = ( ( 0, Store.empty ), remoteStoreAccess ) }
 
 
-storeAccess : StoreAccess (Store item) item
-storeAccess =
-    { insert = Store.insert
-    , insertList = Store.insertList
+type alias LocalStore =
+    Store ( Int, Maybe SyncedStore.SyncTag )
+
+
+localStoreAccess : LocalStoreAccess LocalStore Int
+localStoreAccess =
+    { insert = \path item syncTag store -> Store.insert path ( item, syncTag ) store
+    , insertWithRename = \path item syncTag store -> Store.insertWithRename path ( item, syncTag ) store
+    , insertList =
+        \store list ->
+            Store.insertList store
+                (List.map
+                    (\( path, item, syncTag ) ->
+                        ( path, ( item, syncTag ) )
+                    )
+                    list
+                )
     , read = Store.read
     , update = Store.update
     , delete = Store.delete
-    , listAll = Store.listAll
+    , listAll =
+        \folder store ->
+            Store.listAll folder store
+                |> List.map (\( path, ( item, syncTag ) ) -> ( path, item, syncTag ))
     }
 
 
-listAll : Store item -> List ( FilePath, item )
-listAll store =
-    listAllRec store []
+type alias RemoteStore =
+    ( Int, Store ( Int, String ) )
 
 
-listAllRec : Store item -> FolderPath -> List ( FilePath, item )
-listAllRec store path =
-    List.concat [ Store.list path store, List.concatMap (listAllRec store) (Store.subfolders path store) ]
+remoteStoreAccess : RemoteStoreAccess RemoteStore Int
+remoteStoreAccess =
+    { insert = \path item ( count, store ) -> ( count + 1, Store.insert path ( item, String.fromInt count ) store )
+    , insertList =
+        \( count, store ) list ->
+            let
+                ( newCount, entries ) =
+                    List.foldl
+                        (\( path, item ) ( c, es ) ->
+                            ( c + 1, ( path, ( item, String.fromInt c ) ) :: es )
+                        )
+                        ( count, [] )
+                        list
+            in
+            ( newCount, Store.insertList store entries )
+    , read = \path ( _, store ) -> Store.read path store
+    , update =
+        \path f ( count, store ) ->
+            ( count + 1
+            , Store.update path
+                (\maybeEntry ->
+                    let
+                        newVersion =
+                            String.fromInt count
+                    in
+                    case maybeEntry of
+                        Just ( item, version ) ->
+                            f (Just item)
+                                |> Maybe.map
+                                    (\i ->
+                                        ( i
+                                        , if i == item then
+                                            version
+
+                                          else
+                                            newVersion
+                                        )
+                                    )
+
+                        Nothing ->
+                            f Nothing |> Maybe.map (\i -> ( i, newVersion ))
+                )
+                store
+            )
+    , delete = \path ( count, store ) -> ( count, Store.delete path store )
+    , listAll =
+        \folder ( _, store ) ->
+            Store.listAll folder store
+                |> List.map (\( path, ( item, version ) ) -> ( path, item, version ))
+    }
 
 
 
 -- Expectation helpers
 
 
-expectEqualInAllStores : FilePath -> Maybe item -> SyncedStore (Store item) (Store item) item -> Expect.Expectation
+expectEqualInAllStores : FilePath -> Maybe Int -> SyncedStore LocalStore RemoteStore Int -> Expect.Expectation
 expectEqualInAllStores path expected syncedStore =
-    expectBothStores
-        (\store ->
+    let
+        local =
             let
                 actual =
-                    Store.read path store
+                    Store.read path (SyncedStore.local syncedStore)
+                        |> Maybe.map (\( item, _ ) -> item)
             in
             if actual == expected then
                 Nothing
 
             else
-                Just (reportInequality actual expected)
-        )
-        syncedStore
-
-
-expectBothStores : (Store item -> Maybe String) -> SyncedStore (Store item) (Store item) item -> Expect.Expectation
-expectBothStores storeExpectation syncedStore =
-    let
-        local =
-            storeExpectation (SyncedStore.local syncedStore)
-                |> Maybe.map (\failure -> "Local store failed:\n\n" ++ failure)
+                Just ("Local store failed:\n\n" ++ reportInequality actual expected)
 
         remote =
-            storeExpectation (SyncedStore.remote syncedStore)
-                |> Maybe.map (\failure -> "Remote store failed:\n\n" ++ failure)
+            let
+                actual =
+                    SyncedStore.remote syncedStore
+                        |> Tuple.second
+                        |> Store.read path
+                        |> Maybe.map (\( item, _ ) -> item)
+            in
+            if actual == expected then
+                Nothing
+
+            else
+                Just ("Remote store failed:\n\n" ++ reportInequality actual expected)
 
         combined =
             String.join "\n\n\n" (List.filterMap identity [ local, remote ])
