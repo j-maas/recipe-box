@@ -1,4 +1,4 @@
-module Store.SyncedStore exposing (LocalStoreAccess, LocalVersion, RemoteStoreAccess, RemoteVersion, SyncState, SyncStateAccess, SyncedStore, delete, insert, local, read, remote, sync, with)
+module Store.SyncedStore exposing (LocalStoreAccess, RemoteStoreAccess, SyncState, SyncStateAccess, SyncedStore, Version, delete, insert, local, read, remote, sync, with)
 
 import Dict
 import Store.FilePath as FilePath exposing (FilePath)
@@ -9,7 +9,6 @@ type SyncedStore local syncState remote item
     = SyncedStore
         { local : local
         , localAccess : LocalStoreAccess local item
-        , nextVersion : LocalVersion
         , sync : syncState
         , syncAccess : SyncStateAccess syncState
         , remote : remote
@@ -18,11 +17,11 @@ type SyncedStore local syncState remote item
 
 
 type alias LocalStoreAccess store item =
-    { set : FilePath -> ( item, LocalVersion ) -> store -> store
-    , insertWithRename : FilePath -> ( item, LocalVersion ) -> store -> ( FilePath, store )
-    , read : FilePath -> store -> Maybe ( item, LocalVersion )
+    { set : FilePath -> item -> store -> ( Version, store )
+    , insertWithRename : FilePath -> item -> store -> ( FilePath, Version, store )
+    , read : FilePath -> store -> Maybe ( item, Version )
     , delete : FilePath -> store -> store
-    , listAll : FolderPath -> store -> List ( FilePath, ( item, LocalVersion ) )
+    , listAll : FolderPath -> store -> List ( FilePath, ( item, Version ) )
     }
 
 
@@ -35,30 +34,25 @@ type alias SyncStateAccess store =
 
 
 type alias RemoteStoreAccess store item =
-    { upload : FilePath -> item -> Maybe RemoteVersion -> store -> ( Maybe RemoteVersion, store )
-    , download : FilePath -> store -> Maybe ( item, RemoteVersion )
-    , delete : FilePath -> Maybe RemoteVersion -> store -> ( Bool, store )
-    , listAll : FolderPath -> store -> List ( FilePath, ( item, RemoteVersion ) )
+    { upload : FilePath -> item -> Maybe Version -> store -> ( Maybe Version, store )
+    , download : FilePath -> store -> Maybe ( item, Version )
+    , delete : FilePath -> Maybe Version -> store -> ( Bool, store )
+    , listAll : FolderPath -> store -> List ( FilePath, ( item, Version ) )
     }
 
 
 type alias SyncState =
-    { localVersion : LocalVersion
-    , remoteVersion : RemoteVersion
+    { localVersion : Version
+    , remoteVersion : Version
     }
 
 
-type alias LocalVersion =
-    Int
-
-
-type alias RemoteVersion =
+type alias Version =
     String
 
 
 with :
     { local : ( local, LocalStoreAccess local item )
-    , nextVersion : LocalVersion
     , sync : ( syncState, SyncStateAccess syncState )
     , remote : ( remote, RemoteStoreAccess remote item )
     }
@@ -77,7 +71,6 @@ with stores =
     SyncedStore
         { local = localStore
         , localAccess = localAccess
-        , nextVersion = stores.nextVersion
         , sync = syncStore
         , syncAccess = syncAccess
         , remote = remoteStore
@@ -103,25 +96,24 @@ remote (SyncedStore stores) =
 insert : FilePath -> item -> SyncedStore local syncState remote item -> SyncedStore local syncState remote item
 insert path item (SyncedStore stores) =
     let
-        localVersion =
-            stores.nextVersion
-
         ( maybeRemoteVersion, newRemote ) =
             stores.remoteAccess.upload path item Nothing stores.remote
+
+        ( localVersion, newLocal ) =
+            stores.localAccess.set path item stores.local
 
         newStore =
             case maybeRemoteVersion of
                 Just remoteVersion ->
                     SyncedStore
                         { stores
-                            | local = stores.localAccess.set path ( item, localVersion ) stores.local
+                            | local = newLocal
                             , sync =
                                 stores.syncAccess.set
                                     path
                                     { localVersion = localVersion, remoteVersion = remoteVersion }
                                     stores.sync
                             , remote = newRemote
-                            , nextVersion = stores.nextVersion + 1
                         }
 
                 Nothing ->
@@ -167,7 +159,6 @@ delete path (SyncedStore stores) =
 syncFile : FilePath -> SyncedStore local syncState remote item -> SyncedStore local syncState remote item
 syncFile path (SyncedStore stores) =
     let
-
         maybeRemoteEntry =
             stores.remoteAccess.download path stores.remote
 
@@ -286,15 +277,15 @@ syncFile path (SyncedStore stores) =
                             (SyncedStore stores)
 
 
-insertLocally : FilePath -> item -> RemoteVersion -> SyncedStore local syncState remote item -> SyncedStore local syncState remote item
+insertLocally : FilePath -> item -> Version -> SyncedStore local syncState remote item -> SyncedStore local syncState remote item
 insertLocally path item remoteVersion (SyncedStore stores) =
     let
-        localVersion =
-            stores.nextVersion
+        ( localVersion, newLocal ) =
+            stores.localAccess.set path item stores.local
     in
     SyncedStore
         { stores
-            | local = stores.localAccess.set path ( item, localVersion ) stores.local
+            | local = newLocal
             , sync =
                 stores.syncAccess.set
                     path
@@ -303,7 +294,6 @@ insertLocally path item remoteVersion (SyncedStore stores) =
                     , remoteVersion = remoteVersion
                     }
                     stores.sync
-            , nextVersion = stores.nextVersion + 1
         }
 
 
@@ -316,7 +306,7 @@ deleteLocally path (SyncedStore stores) =
         }
 
 
-insertRemotely : FilePath -> item -> Maybe RemoteVersion -> LocalVersion -> SyncedStore local syncState remote item -> SyncedStore local syncState remote item
+insertRemotely : FilePath -> item -> Maybe Version -> Version -> SyncedStore local syncState remote item -> SyncedStore local syncState remote item
 insertRemotely path item existingRemoteVersion localVersion (SyncedStore stores) =
     let
         ( maybeRemoteVersion, newRemote ) =
@@ -341,7 +331,7 @@ insertRemotely path item existingRemoteVersion localVersion (SyncedStore stores)
             syncFile path (SyncedStore stores)
 
 
-deleteRemotely : FilePath -> RemoteVersion -> SyncedStore local syncState remote item -> SyncedStore local syncState remote item
+deleteRemotely : FilePath -> Version -> SyncedStore local syncState remote item -> SyncedStore local syncState remote item
 deleteRemotely path remoteVersion (SyncedStore stores) =
     let
         ( success, newRemote ) =
@@ -358,21 +348,20 @@ deleteRemotely path remoteVersion (SyncedStore stores) =
         syncFile path (SyncedStore stores)
 
 
-resolveConflict : FilePath -> { local : Maybe ( item, LocalVersion ), remote : Maybe ( item, RemoteVersion ) } -> SyncedStore local syncState remote item -> SyncedStore local syncState remote item
+resolveConflict : FilePath -> { local : Maybe ( item, Version ), remote : Maybe ( item, Version ) } -> SyncedStore local syncState remote item -> SyncedStore local syncState remote item
 resolveConflict path entries (SyncedStore stores) =
     case ( entries.local, entries.remote ) of
-        ( Just ( localItem, localVersion ), Just ( remoteItem, remoteVersion ) ) ->
+        ( Just ( localItem, _ ), Just ( remoteItem, remoteVersion ) ) ->
             let
-                localVersionForRemoteItem =
-                    stores.nextVersion
+                ( localVersionForRemoteItem, newLocal1 ) =
+                    stores.localAccess.set path remoteItem stores.local
 
-                ( secondPath, newLocal ) =
-                    stores.localAccess.set path ( remoteItem, localVersionForRemoteItem ) stores.local
-                        |> stores.localAccess.insertWithRename path ( localItem, localVersion )
+                ( secondPath, localVersion, newLocal2 ) =
+                    stores.localAccess.insertWithRename path localItem newLocal1
             in
             SyncedStore
                 { stores
-                    | local = newLocal
+                    | local = newLocal2
                     , sync =
                         stores.syncAccess.set path
                             { localVersion = localVersionForRemoteItem
@@ -380,7 +369,6 @@ resolveConflict path entries (SyncedStore stores) =
                                 remoteVersion
                             }
                             stores.sync
-                    , nextVersion = stores.nextVersion + 1
                 }
                 |> insertRemotely secondPath localItem (Just remoteVersion) localVersion
 

@@ -1,17 +1,9 @@
-module Store.Store exposing (FilePath, FolderPath, Store, insertWithRename, delete, empty, insert, insertList, list, listAll, read, subfolders, update)
+module Store.Store exposing (Store, delete, empty, insert, insertList, insertWithRename, list, listAll, read, subfolders, update)
 
 import Dict exposing (Dict)
-import Store.FilePath as FilePath
-import Store.FolderPath as FolderPath
+import Store.FilePath exposing (FilePath)
+import Store.FolderPath exposing (FolderPath)
 import Store.PathComponent as PathComponent
-
-
-type alias FilePath =
-    FilePath.FilePath
-
-
-type alias FolderPath =
-    FolderPath.FolderPath
 
 
 type Store item

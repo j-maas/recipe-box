@@ -6,6 +6,7 @@ import Store.FilePath exposing (FilePath)
 import Store.FolderPath exposing (FolderPath)
 import Store.Store as Store exposing (Store)
 import Store.SyncedStore as SyncedStore exposing (LocalStoreAccess, RemoteStoreAccess, SyncStateAccess, SyncedStore)
+import Store.VersionStore as VersionStore exposing (VersionStore)
 import Test exposing (..)
 import TestUtils exposing (entriesFuzzer, filePathFuzzer, sortEntries)
 
@@ -18,46 +19,34 @@ suite =
                 emptySyncedStore
                     |> SyncedStore.insert filePath item
                     |> expectEqualInAllStores filePath (Just item)
-
-        {- , fuzz3 filePathFuzzer Fuzz.int Fuzz.int "updates existing item in both stores" <|
-           \filePath firstItem secondItem ->
-               emptySyncedStore
-                   |> SyncedStore.insert filePath firstItem
-                   |> SyncedStore.update filePath (Maybe.map ((+) secondItem))
-                   |> expectEqualInAllStores filePath (Just <| firstItem + secondItem)
-        -}
         , fuzz2 entriesFuzzer entriesFuzzer "sync results in same items in both stores" <|
             \localEntries remoteEntries ->
                 let
+                    localStore : LocalStore
                     localStore =
-                        List.map (\( path, item ) -> ( path, ( item, 0 ) )) localEntries
-                            |> Store.insertList Store.empty
+                        VersionStore.insertList VersionStore.empty localEntries
 
+                    remoteStore : RemoteStore
                     remoteStore =
-                        ( List.length remoteEntries
-                        , List.indexedMap (\index ( path, item ) -> ( path, ( item, String.fromInt index ) )) remoteEntries
-                            |> Store.insertList Store.empty
-                        )
+                        VersionStore.insertList VersionStore.empty remoteEntries
                 in
                 SyncedStore.with
                     { local = ( localStore, localStoreAccess )
                     , sync = ( Store.empty, syncStoreAccess )
                     , remote = ( remoteStore, remoteStoreAccess )
-                    , nextVersion = 0
                     }
                     |> SyncedStore.sync []
                     |> (\syncedStore ->
                             let
                                 locals =
                                     SyncedStore.local syncedStore
-                                        |> Store.listAll []
+                                        |> VersionStore.listAll []
                                         |> List.map (\( path, ( item, _ ) ) -> ( path, item ))
                                         |> sortEntries
 
                                 remotes =
                                     SyncedStore.remote syncedStore
-                                        |> Tuple.second
-                                        |> Store.listAll []
+                                        |> VersionStore.listAll []
                                         |> List.map (\( path, ( item, _ ) ) -> ( path, item ))
                                         |> sortEntries
                             in
@@ -70,24 +59,23 @@ suite =
 emptySyncedStore : SyncedStore LocalStore SyncStore RemoteStore Int
 emptySyncedStore =
     SyncedStore.with
-        { local = ( Store.empty, localStoreAccess )
+        { local = ( VersionStore.empty, localStoreAccess )
         , sync = ( Store.empty, syncStoreAccess )
-        , nextVersion = 0
-        , remote = ( ( 0, Store.empty ), remoteStoreAccess )
+        , remote = ( VersionStore.empty, remoteStoreAccess )
         }
 
 
 type alias LocalStore =
-    Store ( Int, SyncedStore.LocalVersion )
+    VersionStore Int
 
 
 localStoreAccess : LocalStoreAccess LocalStore Int
 localStoreAccess =
-    { set = Store.insert
-    , insertWithRename = Store.insertWithRename
-    , read = Store.read
-    , delete = Store.delete
-    , listAll = Store.listAll
+    { set = VersionStore.insert
+    , insertWithRename = VersionStore.insertWithRename
+    , read = VersionStore.read
+    , delete = VersionStore.delete
+    , listAll = VersionStore.listAll
     }
 
 
@@ -105,51 +93,45 @@ syncStoreAccess =
 
 
 type alias RemoteStore =
-    ( Int, Store ( Int, SyncedStore.RemoteVersion ) )
+    VersionStore Int
 
 
 remoteStoreAccess : RemoteStoreAccess RemoteStore Int
 remoteStoreAccess =
     { upload =
-        \path item version ( count, store ) ->
+        \path item syncedVersion store ->
             let
                 maybeExistingVersion =
-                    Store.read path store
+                    VersionStore.read path store
                         |> Maybe.map Tuple.second
             in
-            if maybeExistingVersion == version then
-                let
-                    newVersion =
-                        String.fromInt count
-
-                    newStore =
-                        ( count + 1, Store.insert path ( item, newVersion ) store )
-                in
-                ( Just newVersion, newStore )
+            if maybeExistingVersion == syncedVersion then
+                VersionStore.insert path item store
+                    |> Tuple.mapFirst Just
 
             else
-                ( Nothing, ( count, store ) )
-    , download = \path ( _, store ) -> Store.read path store
+                ( Nothing, store )
+    , download = \path store -> VersionStore.read path store
     , delete =
-        \path version ( count, store ) ->
+        \path version store ->
             let
                 success =
-                    (Store.read path store
+                    (VersionStore.read path store
                         |> Maybe.map Tuple.second
                     )
                         == version
 
                 newStore =
                     if success then
-                        Store.delete path store
+                        VersionStore.delete path store
 
                     else
                         store
             in
-            ( success, ( count, newStore ) )
+            ( success, newStore )
     , listAll =
-        \folder ( _, store ) ->
-            Store.listAll folder store
+        \folder store ->
+            VersionStore.listAll folder store
     }
 
 
@@ -163,7 +145,7 @@ expectEqualInAllStores path expected syncedStore =
         local =
             let
                 actual =
-                    Store.read path (SyncedStore.local syncedStore)
+                    VersionStore.read path (SyncedStore.local syncedStore)
                         |> Maybe.map (\( item, _ ) -> item)
             in
             if actual == expected then
@@ -176,8 +158,7 @@ expectEqualInAllStores path expected syncedStore =
             let
                 actual =
                     SyncedStore.remote syncedStore
-                        |> Tuple.second
-                        |> Store.read path
+                        |> VersionStore.read path
                         |> Maybe.map (\( item, _ ) -> item)
             in
             if actual == expected then
