@@ -34,7 +34,8 @@
   - [ ] Highlight occurrences of ingredients on hover.
   - [ ] Prevent display from turning off while cooking. (Wake Lock API (in draft) is only reasonable implementation.)
     - [x] Workaround: Allow playing a soothing YouTube video in a loop.
-    - [ ] Offer customization of what video to play.
+    - [x] Offer customization of what video to play.
+    - [ ] Automatically play the video.
   - [ ] Allow setting portions.
   - [ ] Embed timers.
   - [ ] Instead of brute deletion, have a bin to protect against accidental deletion.
