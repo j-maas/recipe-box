@@ -17,6 +17,7 @@ suite =
             \filePath item ->
                 emptySyncedStore
                     |> SyncedStore.insert filePath item
+                    |> Tuple.first
                     |> expectEqualInAllStores filePath (Just item)
         , test "syncs locally item added to remote" <|
             \_ ->
@@ -41,6 +42,7 @@ suite =
                     , remote = ( remoteStore, remoteStoreAccess )
                     }
                     |> SyncedStore.sync []
+                    |> Tuple.first
                     |> expectEqualInAllStores filePath (Just item)
         , test "resolves conflict" <|
             \_ ->
@@ -78,6 +80,7 @@ suite =
                     , remote = ( remoteStore, remoteStoreAccess )
                     }
                     |> SyncedStore.sync []
+                    |> Tuple.first
                     |> Expect.all
                         [ expectEqualInAllStores firstFilePath (Just remoteItem)
                         , expectEqualInAllStores secondFilePath (Just localItem)
@@ -97,6 +100,7 @@ suite =
                     , remote = ( remoteStore, remoteStoreAccess )
                     }
                     |> SyncedStore.sync []
+                    |> Tuple.first
                     |> (\syncedStore ->
                             let
                                 locals =
@@ -117,7 +121,7 @@ suite =
         ]
 
 
-emptySyncedStore : SyncedStore LocalStore SyncStore RemoteStore Int
+emptySyncedStore : SyncedStore LocalStore SyncStore RemoteStore Int ()
 emptySyncedStore =
     SyncedStore.with
         { local = ( VersionStore.empty, localStoreAccess )
@@ -148,6 +152,7 @@ syncStoreAccess : SyncStateAccess SyncStore
 syncStoreAccess =
     { set = Store.insert
     , read = Store.read
+    , update = Store.update
     , delete = Store.delete
     , listAll = Store.listAll
     }
@@ -157,21 +162,32 @@ type alias RemoteStore =
     VersionStore Int
 
 
-remoteStoreAccess : RemoteStoreAccess RemoteStore Int
+remoteStoreAccess : RemoteStoreAccess RemoteStore Int ()
 remoteStoreAccess =
     { upload =
-        \path item syncedVersion store ->
+        \path item maybeSyncedVersion store ->
             let
                 maybeExistingVersion =
                     VersionStore.read path store
                         |> Maybe.map Tuple.second
-            in
-            if maybeExistingVersion == syncedVersion then
-                VersionStore.insert path item store
-                    |> Tuple.mapFirst Just
 
-            else
-                ( Nothing, store )
+                uploaded =
+                    let
+                        ( _, newStore ) =
+                            VersionStore.insert path item store
+                    in
+                    ( newStore, Cmd.none )
+            in
+            case ( maybeExistingVersion, maybeSyncedVersion ) of
+                ( Just existingVersion, Just syncedVersion ) ->
+                    if existingVersion /= syncedVersion then
+                        uploaded
+
+                    else
+                        ( store, Cmd.none )
+
+                _ ->
+                    uploaded
     , download = \path store -> VersionStore.read path store
     , delete =
         \path version store ->
@@ -200,7 +216,7 @@ remoteStoreAccess =
 -- Expectation helpers
 
 
-expectEqualInAllStores : FilePath -> Maybe Int -> SyncedStore LocalStore SyncStore RemoteStore Int -> Expect.Expectation
+expectEqualInAllStores : FilePath -> Maybe Int -> SyncedStore LocalStore SyncStore RemoteStore Int () -> Expect.Expectation
 expectEqualInAllStores path expected syncedStore =
     let
         local =

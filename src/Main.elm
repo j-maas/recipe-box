@@ -70,7 +70,7 @@ type alias RecipeStore =
 
 
 type alias RecipeId =
-    Store.FilePath
+    FilePath
 
 
 type alias RecipeEntry =
@@ -294,10 +294,10 @@ update msg model =
                                         (\idCandidate ->
                                             case Store.read { folder = recipesFolder, name = idCandidate } state.recipes of
                                                 Just _ ->
-                                                    True
+                                                    PathComponent.Collision
 
                                                 Nothing ->
-                                                    False
+                                                    PathComponent.NewName
                                         )
 
                                 filePath =
@@ -362,10 +362,10 @@ update msg model =
                                                     (\idCandidate ->
                                                         case Store.read { folder = recipesFolder, name = idCandidate } state.recipes of
                                                             Just _ ->
-                                                                True
+                                                                PathComponent.Collision
 
                                                             Nothing ->
-                                                                False
+                                                                PathComponent.NewName
                                                     )
                                             }
 
