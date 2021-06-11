@@ -6,6 +6,7 @@
     "elm-version": "0.19.1",
     "dependencies": {
         "direct": {
+            "bellroy/elm-embed-youtube": "1.0.0",
             "elm/browser": "1.0.2",
             "elm/core": "1.0.5",
             "elm/html": "1.0.0",
@@ -13,8 +14,7 @@
             "elm/parser": "1.1.0",
             "elm/url": "1.0.0",
             "elm-community/list-extra": "8.2.4",
-            "rtfeldman/elm-css": "16.1.0",
-            "tricycle/elm-embed-youtube": "1.1.2"
+            "rtfeldman/elm-css": "16.1.0"
         },
         "indirect": {
             "elm/time": "1.0.0",
