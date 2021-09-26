@@ -1,7 +1,7 @@
 # Recipe Box
 
 ## Try it out!
-1. Open the app at [y0hy0h.github.io/recipe-box](https://y0hy0h.github.io/recipe-box/).
+1. Open the app at [j-maas.github.io/recipe-box](https://j-maas.github.io/recipe-box/).
 2. Add a new recipe, for example this one:
    ```
    # Crêpes
